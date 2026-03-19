@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude × Notion 연동 활용 가이드</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;500;700&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0a0f;
+  --surface: #12121a;
+  --surface-raised: #1a1a26;
+  --surface-hover: #22223a;
+  --border: #2a2a3e;
+  --border-glow: #4f46e540;
+  --text: #e8e6f0;
+  --text-muted: #8b89a0;
+  --text-dim: #5a5872;
+  --accent: #7c6aef;
+  --accent-bright: #9b8bff;
+  --accent-dim: #4f46e5;
+  --notion: #ffffff;
+  --claude: #d4a574;
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --tag-search: #3b82f6;
+  --tag-create: #10b981;
+  --tag-manage: #f59e0b;
+  --tag-automate: #ef4444;
+  --tag-collab: #8b5cf6;
+  --tag-advanced: #ec4899;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow: 0 4px 24px rgba(0,0,0,0.4);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Noto Sans KR', sans-serif;
+  line-height: 1.7;
+  overflow-x: hidden;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* Hero */
+.hero {
+  position: relative;
+  min-height: 50vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 80px 24px 60px;
+  overflow: hidden;
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(ellipse at 30% 50%, #4f46e510 0%, transparent 50%),
+              radial-gradient(ellipse at 70% 30%, #d4a57408 0%, transparent 50%);
+  animation: heroFloat 20s ease-in-out infinite;
+}
+
+@keyframes heroFloat {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  33% { transform: translate(2%, -1%) rotate(1deg); }
+  66% { transform: translate(-1%, 1%) rotate(-0.5deg); }
+}
+
+.hero-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 32px;
+  animation: fadeUp 0.8s ease-out;
+}
+
+.hero-badge .dot {
+  width: 6px; height: 6px;
+  background: var(--success);
+  border-radius: 50%;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.hero h1 {
+  position: relative;
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(36px, 6vw, 64px);
+  font-weight: 900;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  margin-bottom: 20px;
+  animation: fadeUp 0.8s ease-out 0.1s both;
+}
+
+.hero h1 .gradient {
+  background: linear-gradient(135deg, var(--accent-bright), var(--claude));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hero p {
+  position: relative;
+  max-width: 560px;
+  font-size: 16px;
+  color: var(--text-muted);
+  font-weight: 300;
+  animation: fadeUp 0.8s ease-out 0.2s both;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Stats bar */
+.stats-bar {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  gap: 48px;
+  padding: 24px;
+  margin-top: 40px;
+  animation: fadeUp 0.8s ease-out 0.3s both;
+}
+
+.stat { text-align: center; }
+.stat-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--accent-bright);
+}
+.stat-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* Main layout */
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 24px 80px;
+}
+
+/* Filter */
+.filter-section {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--bg);
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 40px;
+  animation: fadeUp 0.8s ease-out 0.4s both;
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filter-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-right: 8px;
+}
+
+.filter-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-family: 'Noto Sans KR', sans-serif;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.filter-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.filter-btn.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: white;
+}
+
+.search-input {
+  flex: 1;
+  min-width: 200px;
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-family: 'Noto Sans KR', sans-serif;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.search-input:focus { border-color: var(--accent); }
+.search-input::placeholder { color: var(--text-dim); }
+
+/* Cards grid */
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+/* Tip card */
+.tip-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  animation: cardIn 0.5s ease-out both;
+}
+
+.tip-card:hover {
+  border-color: var(--accent-dim);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(79, 70, 229, 0.1);
+}
+
+.tip-card.expanded {
+  grid-column: 1 / -1;
+}
+
+.tip-card.hidden {
+  display: none;
+}
+
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.card-header {
+  padding: 20px 20px 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.card-icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  font-size: 20px;
+}
+
+.card-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.card-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.tag {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.tag-search { background: #3b82f615; color: var(--tag-search); }
+.tag-create { background: #10b98115; color: var(--tag-create); }
+.tag-manage { background: #f59e0b15; color: var(--tag-manage); }
+.tag-automate { background: #ef444415; color: var(--tag-automate); }
+.tag-collab { background: #8b5cf615; color: var(--tag-collab); }
+.tag-advanced { background: #ec489915; color: var(--tag-advanced); }
+
+.card-title {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.card-desc {
+  padding: 0 20px;
+  font-size: 14px;
+  color: var(--text-muted);
+  font-weight: 300;
+}
+
+.card-footer {
+  padding: 12px 20px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.difficulty {
+  display: flex;
+  gap: 3px;
+}
+
+.diff-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+}
+.diff-dot.filled { background: var(--accent-bright); }
+
+.expand-hint {
+  font-size: 12px;
+  color: var(--text-dim);
+  transition: color 0.2s;
+}
+
+.tip-card:hover .expand-hint { color: var(--accent-bright); }
+
+/* Expanded content */
+.card-detail {
+  display: none;
+  padding: 0 20px 24px;
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+}
+
+.tip-card.expanded .card-detail { display: block; }
+
+.detail-section {
+  margin-top: 20px;
+}
+
+.detail-section h4 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent-bright);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.prompt-box {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--text-muted);
+  position: relative;
+  margin-bottom: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.prompt-box .user-msg {
+  color: var(--claude);
+}
+
+.prompt-box .highlight {
+  color: var(--accent-bright);
+  font-weight: 500;
+}
+
+.copy-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 4px 10px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.copy-btn:hover {
+  background: var(--accent-dim);
+  color: white;
+  border-color: var(--accent);
+}
+
+.tip-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tip-list li {
+  padding: 10px 14px;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  color: var(--text-muted);
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  line-height: 1.6;
+}
+
+.tip-list li::before {
+  content: '→';
+  color: var(--accent-bright);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.warning-box {
+  background: #fbbf2408;
+  border: 1px solid #fbbf2420;
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--warning);
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.tool-used {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin: 2px;
+}
+
+.tools-used-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .stats-bar { gap: 24px; }
+  .cards-grid { grid-template-columns: 1fr; }
+  .filter-row { gap: 6px; }
+}
+</style>
+</head>
+<body>
+
+<section class="hero">
+  <div class="hero-badge">
+    <span class="dot"></span>
+    Notion MCP 연동 활성화됨
+  </div>
+  <h1>Claude <span class="gradient">×</span> Notion<br>연동 활용 가이드</h1>
+  <p>MCP 커넥터로 연결된 Claude와 Notion, 실무에서 바로 쓸 수 있는 팁 모음. 카드를 클릭하면 예시 프롬프트와 상세 가이드가 열립니다.</p>
+  <div class="stats-bar">
+    <div class="stat">
+      <div class="stat-num">14</div>
+      <div class="stat-label">사용 도구</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">20+</div>
+      <div class="stat-label">활용 팁</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">6</div>
+      <div class="stat-label">카테고리</div>
+    </div>
+  </div>
+</section>
+
+<div class="container">
+  <div class="filter-section">
+    <div class="filter-row">
+      <span class="filter-label">필터</span>
+      <button class="filter-btn active" data-filter="all">전체</button>
+      <button class="filter-btn" data-filter="search">🔍 검색</button>
+      <button class="filter-btn" data-filter="create">✏️ 생성</button>
+      <button class="filter-btn" data-filter="manage">📁 관리</button>
+      <button class="filter-btn" data-filter="automate">⚡ 자동화</button>
+      <button class="filter-btn" data-filter="collab">👥 협업</button>
+      <button class="filter-btn" data-filter="advanced">🧪 고급</button>
+      <input type="text" class="search-input" placeholder="팁 검색..." id="searchInput">
+    </div>
+  </div>
+
+  <div class="cards-grid" id="cardsGrid">
+  </div>
+</div>
+
+<script>
+const tips = [
+  {
+    id: 1,
+    icon: "🔎",
+    iconBg: "#3b82f615",
+    tags: ["search"],
+    title: "워크스페이스 시맨틱 검색",
+    desc: "키워드가 아닌 의미 기반으로 Notion 전체를 검색합니다. 정확한 제목을 몰라도 개념만으로 찾아냅니다.",
+    difficulty: 1,
+    prompt: `<span class="user-msg">우리 프로젝트에서 "캐릭터 전환 시 버프 유지" 관련 논의가 있었던 페이지를 찾아줘</span>`,
+    detail: [
+      "notion-search 도구가 시맨틱(의미) 검색을 지원하므로, 정확한 제목을 몰라도 '개념'으로 검색 가능",
+      "검색 범위를 특정 팀스페이스로 한정하려면 teamspace_id를 지정할 수 있음",
+      "Notion에 연결된 외부 소스(Slack, Google Drive, Jira 등)도 함께 검색됨"
+    ],
+    warning: "검색 결과의 하이라이트 길이를 조절(max_highlight_length)하면 토큰을 절약할 수 있습니다.",
+    tools: ["notion-search"]
+  },
+  {
+    id: 2,
+    icon: "📄",
+    iconBg: "#10b98115",
+    tags: ["create"],
+    title: "기획서 초안 자동 생성",
+    desc: "대화에서 논의한 내용을 바탕으로 Notion에 기획서 페이지를 즉시 생성합니다.",
+    difficulty: 1,
+    prompt: `<span class="user-msg">방금 논의한 "원소 반응 우선순위 시스템"을 기획서 초안으로 만들어서 Notion에 올려줘. 기획 의도 → 기능 정의 → 예외 처리 구조로 작성해줘.</span>`,
+    detail: [
+      "notion-create-pages 도구로 마크다운 형식의 콘텐츠를 가진 페이지를 바로 생성",
+      "parent를 지정하면 원하는 페이지 하위에 생성 가능 (page_id 또는 data_source_id)",
+      "아이콘(emoji)과 커버 이미지도 동시에 설정 가능",
+      "기존 템플릿을 적용하려면 template_id를 함께 전달"
+    ],
+    warning: "Notion 마크다운은 표준과 약간 다릅니다. 토글, 콜아웃 등 Notion 전용 문법이 있으므로 enhanced-markdown-spec을 참고하면 더 풍부한 문서를 만들 수 있습니다.",
+    tools: ["notion-create-pages"]
+  },
+  {
+    id: 3,
+    icon: "🗃️",
+    iconBg: "#10b98115",
+    tags: ["create", "manage"],
+    title: "데이터베이스(DB) 생성 & 스키마 설계",
+    desc: "SQL DDL 문법으로 Notion DB를 생성합니다. 속성 타입, 셀렉트 옵션, 릴레이션까지 한 번에.",
+    difficulty: 2,
+    prompt: `<span class="user-msg">전투 밸런스 테스트 로그를 관리할 Notion DB를 만들어줘.\n속성: 테스트명(제목), 캐릭터(셀렉트), 스킬 조합(멀티셀렉트), DPS 결과(숫자), 상태(상태), 테스트 일자(날짜), 담당자(사람)</span>`,
+    detail: [
+      "notion-create-database가 SQL CREATE TABLE 문법을 사용 — SELECT, MULTI_SELECT, NUMBER, DATE, PEOPLE, STATUS 등 지원",
+      "RELATION으로 다른 DB와 연결, ROLLUP으로 집계 속성도 추가 가능",
+      "UNIQUE_ID로 고유 식별자 자동 부여 (PREFIX 지정 가능, 예: 'BAL-001')",
+      "생성 후 notion-create-view로 보드/캘린더/차트 뷰를 추가 설정 가능"
+    ],
+    warning: null,
+    tools: ["notion-create-database", "notion-create-view"]
+  },
+  {
+    id: 4,
+    icon: "📊",
+    iconBg: "#f59e0b15",
+    tags: ["manage", "advanced"],
+    title: "뷰 커스터마이징 — 필터·정렬·그룹·차트",
+    desc: "기존 DB에 보드, 캘린더, 타임라인, 차트 등 다양한 뷰를 추가하고 설정합니다.",
+    difficulty: 2,
+    prompt: `<span class="user-msg">밸런스 테스트 DB에 다음 뷰들을 추가해줘:\n1. "진행중 테스트" — 상태가 In Progress인 것만 필터링한 테이블\n2. "캐릭터별 보드" — 캐릭터 속성으로 그룹핑한 보드 뷰\n3. "일정" — 테스트 일자 기반 캘린더 뷰</span>`,
+    detail: [
+      "notion-create-view에서 type으로 table/board/calendar/timeline/gallery/chart/dashboard 등 지정",
+      "configure DSL로 FILTER, SORT BY, GROUP BY, CALENDAR BY, TIMELINE BY, CHART 등 설정",
+      "SHOW 지시어로 표시할 속성을 선택적으로 지정 가능",
+      "차트 뷰에서는 column/bar/line/donut/number 타입과 AGGREGATE 함수 지원"
+    ],
+    warning: null,
+    tools: ["notion-create-view", "notion-update-view"]
+  },
+  {
+    id: 5,
+    icon: "🔄",
+    iconBg: "#f59e0b15",
+    tags: ["manage"],
+    title: "페이지 내용 부분 수정 (Search & Replace)",
+    desc: "전체를 덮어쓰지 않고, 특정 섹션만 정밀하게 수정합니다.",
+    difficulty: 2,
+    prompt: `<span class="user-msg">전투 시스템 설계서의 "회피 무적 프레임" 섹션에서\n무적 프레임을 0.3초에서 0.4초로 수정하고,\n해당 섹션 아래에 "모바일 대응 참고사항" 항목을 추가해줘.</span>`,
+    detail: [
+      "notion-update-page의 update_content 커맨드를 사용 — old_str로 기존 텍스트를 찾고 new_str로 교체",
+      "여러 수정을 content_updates 배열에 담아 한 번에 처리 가능 (최대 100개)",
+      "replace_content를 쓰면 전체 내용을 통째로 교체 가능하지만, 하위 페이지/DB가 있으면 주의 필요",
+      "수정 전에 반드시 fetch로 현재 내용을 확인해야 정확한 old_str을 쓸 수 있음"
+    ],
+    warning: "replace_content 사용 시 하위 페이지나 DB가 삭제될 수 있습니다. Claude가 확인을 요청하면 반드시 검토하세요.",
+    tools: ["notion-fetch", "notion-update-page"]
+  },
+  {
+    id: 6,
+    icon: "📑",
+    iconBg: "#10b98115",
+    tags: ["create", "automate"],
+    title: "대량 페이지 일괄 생성 (Batch Create)",
+    desc: "DB에 여러 항목을 한 번에 생성합니다. 캐릭터 목록, 스킬 시트, 테스트 케이스 등에 활용.",
+    difficulty: 2,
+    prompt: `<span class="user-msg">다음 6캐릭터의 스킬 밸런스 시트를 DB에 일괄 생성해줘:\n- 불 속성: 화염검사, 폭렬술사\n- 물 속성: 빙결사, 치유사\n- 풍 속성: 질풍도, 폭풍궁사\n각각 속성 타입, 역할, 초기 DPS를 채워넣어줘.</span>`,
+    detail: [
+      "notion-create-pages의 pages 배열에 최대 100개 페이지를 한 번에 전달 가능",
+      "각 페이지마다 properties, content, icon, cover를 개별 설정 가능",
+      "parent를 data_source_id로 지정하면 특정 DB의 데이터소스에 직접 추가",
+      "template_id를 지정하면 템플릿 기반으로 일괄 생성 (content 대신 template 사용)"
+    ],
+    warning: null,
+    tools: ["notion-create-pages"]
+  },
+  {
+    id: 7,
+    icon: "💬",
+    iconBg: "#8b5cf615",
+    tags: ["collab"],
+    title: "페이지에 코멘트 & 리뷰 남기기",
+    desc: "기획서의 특정 문단에 인라인 코멘트를 남기거나, 페이지 전체에 리뷰 의견을 달 수 있습니다.",
+    difficulty: 1,
+    prompt: `<span class="user-msg">전투 시스템 설계서를 검토해서\n논리적 모순이나 누락된 케이스가 있는 부분에\n코멘트를 남겨줘. 심각도(치명적/보완/마이너)도 표시해줘.</span>`,
+    detail: [
+      "notion-create-comment로 페이지 레벨 또는 특정 블록에 코멘트 생성",
+      "selection_with_ellipsis로 특정 텍스트 범위를 지정하면 인라인 코멘트 가능 (예: '# 회피 시스...스템 설명')",
+      "기존 디스커션에 답글을 달려면 discussion_id를 지정",
+      "rich_text에 볼드, 이탤릭, 코드, 링크 등 서식도 적용 가능"
+    ],
+    warning: "인라인 코멘트(selection_with_ellipsis)는 해당 텍스트가 페이지에 정확히 존재해야 합니다. fetch로 먼저 확인하세요.",
+    tools: ["notion-fetch", "notion-create-comment", "notion-get-comments"]
+  },
+  {
+    id: 8,
+    icon: "📖",
+    iconBg: "#3b82f615",
+    tags: ["search"],
+    title: "기존 문서 읽고 요약하기",
+    desc: "Notion 페이지를 fetch해서 전체 내용을 확인하고, 요약·분석·비교를 수행합니다.",
+    difficulty: 1,
+    prompt: `<span class="user-msg">"전투 시스템 v2.3 설계서"를 찾아서 읽고,\n현재 설계의 핵심 구조를 3줄로 요약해줘.\n그리고 원신·ZZZ 대비 차별점이 뭔지 분석해줘.</span>`,
+    detail: [
+      "notion-search로 찾고 → notion-fetch로 전체 내용을 마크다운으로 가져옴",
+      "include_discussions: true를 설정하면 페이지의 코멘트/디스커션 현황도 함께 확인",
+      "DB 페이지를 fetch하면 스키마, 데이터소스 ID, 템플릿 목록도 반환됨",
+      "가져온 내용을 Claude에게 분석·비교·요약 요청 가능"
+    ],
+    warning: null,
+    tools: ["notion-search", "notion-fetch"]
+  },
+  {
+    id: 9,
+    icon: "🏗️",
+    iconBg: "#f59e0b15",
+    tags: ["manage"],
+    title: "DB 스키마 변경 — 속성 추가·수정·삭제",
+    desc: "운영 중인 DB의 스키마를 DDL로 수정합니다. 새 속성 추가, 이름 변경, 타입 변경 등.",
+    difficulty: 2,
+    prompt: `<span class="user-msg">밸런스 테스트 DB에 다음 변경을 적용해줘:\n1. "모바일 DPS" 숫자 속성 추가\n2. "상태" 옵션에 "Mobile QA" 추가 (파란색)\n3. "테스트명"을 "테스트 시나리오"로 이름 변경</span>`,
+    detail: [
+      "notion-update-data-source에 SQL DDL문(ADD COLUMN, ALTER COLUMN SET, RENAME COLUMN, DROP COLUMN)을 세미콜론으로 구분하여 전달",
+      "셀렉트/멀티셀렉트 옵션 추가·변경 시 ALTER COLUMN SET으로 전체 옵션 목록 재정의",
+      "RELATION, ROLLUP, FORMULA 등 복잡한 속성도 추가 가능",
+      "변경 전 반드시 fetch로 현재 스키마를 확인하여 data_source_id를 정확히 파악"
+    ],
+    warning: "DROP COLUMN은 되돌릴 수 없습니다. 중요한 속성 삭제 전 백업을 권장합니다.",
+    tools: ["notion-fetch", "notion-update-data-source"]
+  },
+  {
+    id: 10,
+    icon: "📂",
+    iconBg: "#f59e0b15",
+    tags: ["manage"],
+    title: "페이지 이동 & 구조 재배치",
+    desc: "페이지나 DB를 다른 상위 페이지 아래로 이동시킵니다. 문서 구조 정리에 활용.",
+    difficulty: 1,
+    prompt: `<span class="user-msg">지난달 작성된 프로토타입 관련 문서들을\n"Archive > 2025 Q1" 페이지 아래로 모아서 옮겨줘.</span>`,
+    detail: [
+      "notion-move-pages로 최대 100개 페이지/DB를 한 번에 이동",
+      "new_parent에 page_id, database_id, data_source_id, 또는 workspace(최상위) 지정 가능",
+      "검색(notion-search)으로 대상 페이지들을 찾고, ID를 모아서 일괄 이동",
+      "데이터소스(컬렉션)는 개별 이동 불가 — DB 전체 단위로 이동해야 함"
+    ],
+    warning: null,
+    tools: ["notion-search", "notion-move-pages"]
+  },
+  {
+    id: 11,
+    icon: "📋",
+    iconBg: "#10b98115",
+    tags: ["create"],
+    title: "페이지 복제로 템플릿 활용",
+    desc: "기존 페이지를 복제해서 새로운 기획서의 출발점으로 사용합니다.",
+    difficulty: 1,
+    prompt: `<span class="user-msg">"전투 시스템 설계서 템플릿"을 복제하고,\n제목을 "v3.0 원소 폭발 시스템 설계서"로 바꿔줘.\n아이콘은 💥으로 설정해줘.</span>`,
+    detail: [
+      "notion-duplicate-page로 페이지 복제 (비동기로 동작 — 즉시 반영 안 될 수 있음)",
+      "복제 후 notion-update-page로 제목, 아이콘, 커버 등을 수정",
+      "DB 내 페이지를 생성할 때는 template_id로 데이터베이스 템플릿 적용도 가능",
+      "복제된 페이지는 원본과 같은 위치에 생성됨 — 필요시 move-pages로 이동"
+    ],
+    warning: "복제는 비동기로 처리됩니다. 복제 직후 바로 내용을 수정하면 충돌이 발생할 수 있으니 잠시 기다린 후 작업하세요.",
+    tools: ["notion-duplicate-page", "notion-update-page"]
+  },
+  {
+    id: 12,
+    icon: "🔗",
+    iconBg: "#ec489915",
+    tags: ["advanced"],
+    title: "DB 간 릴레이션 & 롤업 설계",
+    desc: "여러 DB를 릴레이션으로 연결하고, 롤업으로 집계 데이터를 자동 계산합니다.",
+    difficulty: 3,
+    prompt: `<span class="user-msg">캐릭터 DB와 밸런스 테스트 DB를 양방향 릴레이션으로 연결해줘.\n그리고 캐릭터 DB에 "평균 DPS"(롤업 - 평균)과 "테스트 횟수"(롤업 - 카운트) 속성을 추가해줘.</span>`,
+    detail: [
+      "RELATION('data_source_id') — 단방향 릴레이션",
+      "RELATION('data_source_id', DUAL) — 양방향 릴레이션 (자동으로 상대 DB에도 속성 생성)",
+      "RELATION('ds_id', DUAL 'synced_name') — 상대측 속성 이름 지정",
+      "ROLLUP('릴레이션속성명', '대상속성명', 'average|count|sum|...') — 릴레이션 통한 집계",
+      "자기 참조 릴레이션도 가능: 같은 data_source_id를 사용하되 DUAL에 양쪽 이름·ID를 모두 지정"
+    ],
+    warning: "양방향 릴레이션 생성 시 상대 DB에도 속성이 추가됩니다. 다른 팀이 관리하는 DB라면 사전 합의가 필요합니다.",
+    tools: ["notion-create-database", "notion-update-data-source"]
+  },
+  {
+    id: 13,
+    icon: "👥",
+    iconBg: "#8b5cf615",
+    tags: ["collab"],
+    title: "팀스페이스 & 사용자 조회",
+    desc: "워크스페이스의 팀 목록과 멤버를 조회하여 협업 대상을 파악합니다.",
+    difficulty: 1,
+    prompt: `<span class="user-msg">우리 워크스페이스의 팀 목록을 보여주고,\n"전투기획팀"에서 최근 작성한 문서들을 찾아줘.</span>`,
+    detail: [
+      "notion-get-teams로 팀스페이스 목록 조회 (query로 이름 필터링 가능)",
+      "notion-search에서 query_type: 'user'로 사용자 이름/이메일 검색",
+      "teamspace_id를 검색에 활용하면 특정 팀의 문서만 필터링",
+      "filters.created_by_user_ids로 특정 사용자가 작성한 문서만 검색 가능"
+    ],
+    warning: null,
+    tools: ["notion-get-teams", "notion-search"]
+  },
+  {
+    id: 14,
+    icon: "⚡",
+    iconBg: "#ef444415",
+    tags: ["automate"],
+    title: "회의록 → 작업 항목 자동 변환",
+    desc: "회의록을 읽고 액션 아이템을 추출해서 태스크 DB에 자동 등록합니다.",
+    difficulty: 2,
+    prompt: `<span class="user-msg">"3/15 전투밸런스 회의록"을 읽고,\n액션 아이템들을 추출해서 "Sprint Tasks" DB에 등록해줘.\n담당자, 우선순위, 마감일을 가능한 범위에서 채워넣어줘.</span>`,
+    detail: [
+      "notion-search → notion-fetch로 회의록 내용을 가져옴",
+      "Claude가 내용을 분석하여 액션 아이템 추출",
+      "notion-create-pages로 태스크 DB에 일괄 등록 (properties에 담당자·우선순위·마감일 매핑)",
+      "회의록 페이지에 '작업 등록 완료' 코멘트를 남겨서 처리 이력 관리"
+    ],
+    warning: null,
+    tools: ["notion-search", "notion-fetch", "notion-create-pages", "notion-create-comment"]
+  },
+  {
+    id: 15,
+    icon: "🔍",
+    iconBg: "#3b82f615",
+    tags: ["search", "advanced"],
+    title: "외부 연동 소스까지 통합 검색",
+    desc: "Notion뿐 아니라 연결된 Slack, Google Drive, Jira, GitHub 등도 한 번에 검색합니다.",
+    difficulty: 2,
+    prompt: `<span class="user-msg">"원소 반응 밸런스 이슈" 관련 내용을\nNotion 문서, Slack 대화, Jira 티켓 전부에서 찾아줘.</span>`,
+    detail: [
+      "notion-search에서 content_search_mode: 'ai_search'를 사용하면 연결된 외부 소스도 포함",
+      "Slack, Google Drive, GitHub, Jira, Microsoft Teams, SharePoint, OneDrive, Linear 지원",
+      "외부 소스 결과는 URL 형태로 반환되어 직접 접근 가능",
+      "워크스페이스 전용 검색은 'workspace_search' 모드로 전환하여 속도 향상"
+    ],
+    warning: "AI Search는 Notion AI 플랜이 활성화된 경우에만 사용 가능합니다. 비활성화 시 workspace_search로 폴백됩니다.",
+    tools: ["notion-search"]
+  },
+  {
+    id: 16,
+    icon: "📐",
+    iconBg: "#ec489915",
+    tags: ["advanced", "create"],
+    title: "기획서 리뷰 자동화 워크플로",
+    desc: "기획서를 읽고, 검토 기준에 따라 체계적으로 리뷰한 뒤 결과를 Notion에 기록합니다.",
+    difficulty: 3,
+    prompt: `<span class="user-msg">"v2.5 스킬 시스템 설계서"를 다음 기준으로 리뷰해줘:\n- 논리적 모순 → 구현 리스크 → 누락 케이스 → 개선 제안\n- 조작감·피드백 루프·밸런스 리스크 포함\n- 모바일 이식 시 충돌 가능성\n리뷰 결과를 설계서 하위에 "리뷰 리포트" 페이지로 만들어줘.\n치명적 이슈는 원문에 인라인 코멘트도 남겨줘.</span>`,
+    detail: [
+      "fetch로 설계서 전체 내용 읽기 → Claude가 체계적 검토 수행",
+      "create-pages로 리뷰 리포트 페이지 생성 (parent를 설계서 page_id로 지정)",
+      "create-comment로 치명적 이슈에 인라인 코멘트 (selection_with_ellipsis 활용)",
+      "이 패턴을 반복하면 기획서 검토 자동화 워크플로 구축 가능"
+    ],
+    warning: "대규모 문서를 다룰 때는 토큰 사용량에 주의하세요. 섹션별로 나눠서 리뷰하면 더 정확합니다.",
+    tools: ["notion-fetch", "notion-create-pages", "notion-create-comment"]
+  },
+  {
+    id: 17,
+    icon: "📆",
+    iconBg: "#8b5cf615",
+    tags: ["collab", "manage"],
+    title: "날짜 필터로 최근 변경사항 추적",
+    desc: "특정 기간에 작성된 문서만 필터링하여 팀의 최근 작업을 한눈에 파악합니다.",
+    difficulty: 1,
+    prompt: `<span class="user-msg">이번 주에 전투기획팀에서 새로 작성하거나 수정한 문서들을 모아서 보여줘.</span>`,
+    detail: [
+      "notion-search의 filters.created_date_range로 시작일·종료일 지정",
+      "filters.created_by_user_ids와 조합하면 특정 팀원의 작업만 추적",
+      "teamspace_id로 팀 범위 한정 → 날짜 필터 조합으로 정밀 검색",
+      "검색 결과를 정리해서 위클리 리포트 페이지로 자동 생성하는 패턴도 가능"
+    ],
+    warning: null,
+    tools: ["notion-search"]
+  },
+  {
+    id: 18,
+    icon: "🧩",
+    iconBg: "#ef444415",
+    tags: ["automate", "advanced"],
+    title: "문서 간 크로스 레퍼런스 자동화",
+    desc: "관련 문서들을 검색하고, 상호 참조 링크와 요약을 자동으로 삽입합니다.",
+    difficulty: 3,
+    prompt: `<span class="user-msg">"회피 시스템 설계서"와 관련된 다른 설계 문서들을 찾아서,\n각 문서의 핵심 연관점을 정리한 "관련 문서" 섹션을\n회피 시스템 설계서 하단에 추가해줘.</span>`,
+    detail: [
+      "notion-search로 관련 문서 탐색 → notion-fetch로 각각 내용 확인",
+      "Claude가 연관성을 분석하여 크로스 레퍼런스 정리",
+      "notion-update-page(update_content)로 기존 문서에 '관련 문서' 섹션 삽입",
+      "Notion 마크다운에서 [링크텍스트](페이지URL) 형태로 페이지 간 링크 생성"
+    ],
+    warning: null,
+    tools: ["notion-search", "notion-fetch", "notion-update-page"]
+  },
+  {
+    id: 19,
+    icon: "✅",
+    iconBg: "#10b98115",
+    tags: ["manage", "collab"],
+    title: "페이지 검증(Verification) 관리",
+    desc: "기획서의 검증 상태를 설정하여 최신·검토 완료 여부를 팀에 공유합니다.",
+    difficulty: 1,
+    prompt: `<span class="user-msg">"전투 시스템 v3.0 설계서"를 검증 완료 상태로 표시하고,\n90일 후 재검증 알림이 뜨도록 설정해줘.</span>`,
+    detail: [
+      "notion-update-page의 update_verification 커맨드 사용",
+      "verification_status: 'verified'로 설정, expiry_days로 만료일 지정",
+      "Business/Enterprise 플랜 또는 Wiki 페이지에서만 사용 가능",
+      "'unverified'로 설정하면 검증 해제"
+    ],
+    warning: "Verification은 Business/Enterprise 플랜 이상에서만 지원됩니다.",
+    tools: ["notion-update-page"]
+  },
+  {
+    id: 20,
+    icon: "🎯",
+    iconBg: "#ec489915",
+    tags: ["advanced", "automate"],
+    title: "프롬프트 체이닝 — 복합 워크플로 구성",
+    desc: "여러 도구를 연결하여 검색→분석→생성→코멘트까지 한 번에 처리하는 패턴입니다.",
+    difficulty: 3,
+    prompt: `<span class="user-msg">다음을 순서대로 해줘:\n1. "전투 시스템" 관련 문서를 전부 찾아줘\n2. 각 문서의 마지막 수정일과 검증 상태를 정리해줘\n3. 3개월 이상 미수정 문서는 "문서 리프레시 필요" DB에 등록\n4. 해당 문서들에 "업데이트 필요" 코멘트를 남겨줘</span>`,
+    detail: [
+      "Notion MCP 도구들을 순차적으로 호출하는 '체이닝' 패턴",
+      "search → fetch(여러 번) → create-pages(DB 등록) → create-comment 순서",
+      "Claude가 중간 결과를 분석·판단하여 다음 단계에 반영",
+      "이 패턴을 응용하면: 스프린트 리뷰, 문서 품질 관리, 온보딩 체크리스트 등 다양한 자동화 가능"
+    ],
+    warning: "복합 워크플로는 다수의 API 호출이 발생합니다. 한 번에 너무 많은 페이지를 처리하면 속도가 느려질 수 있으니, 적절한 범위를 지정하세요.",
+    tools: ["notion-search", "notion-fetch", "notion-create-pages", "notion-create-comment"]
+  }
+];
+
+const tagLabels = {
+  search: "🔍 검색",
+  create: "✏️ 생성",
+  manage: "📁 관리",
+  automate: "⚡ 자동화",
+  collab: "👥 협업",
+  advanced: "🧪 고급"
+};
+
+function renderCards(filter = 'all', query = '') {
+  const grid = document.getElementById('cardsGrid');
+  grid.innerHTML = '';
+
+  const filtered = tips.filter(tip => {
+    const matchFilter = filter === 'all' || tip.tags.includes(filter);
+    const matchQuery = !query ||
+      tip.title.toLowerCase().includes(query.toLowerCase()) ||
+      tip.desc.toLowerCase().includes(query.toLowerCase()) ||
+      tip.tools.some(t => t.toLowerCase().includes(query.toLowerCase()));
+    return matchFilter && matchQuery;
+  });
+
+  filtered.forEach((tip, i) => {
+    const card = document.createElement('div');
+    card.className = 'tip-card';
+    card.style.animationDelay = `${i * 0.05}s`;
+
+    const diffDots = Array.from({length: 3}, (_, j) =>
+      `<div class="diff-dot ${j < tip.difficulty ? 'filled' : ''}"></div>`
+    ).join('');
+
+    const tagHTML = tip.tags.map(t =>
+      `<span class="tag tag-${t}">${tagLabels[t]}</span>`
+    ).join('');
+
+    const toolsHTML = tip.tools.map(t =>
+      `<span class="tool-used">⚙️ ${t}</span>`
+    ).join('');
+
+    const detailItems = tip.detail.map(d =>
+      `<li>${d}</li>`
+    ).join('');
+
+    const warningHTML = tip.warning ?
+      `<div class="warning-box">⚠️ ${tip.warning}</div>` : '';
+
+    card.innerHTML = `
+      <div class="card-header">
+        <div class="card-icon" style="background:${tip.iconBg}">${tip.icon}</div>
+        <div class="card-meta">
+          <div class="card-tags">${tagHTML}</div>
+          <div class="card-title">${tip.title}</div>
+        </div>
+      </div>
+      <div class="card-desc">${tip.desc}</div>
+      <div class="card-footer">
+        <div class="difficulty">${diffDots}</div>
+        <div class="expand-hint">클릭하여 상세보기 ↓</div>
+      </div>
+      <div class="card-detail">
+        <div class="detail-section">
+          <h4>💡 예시 프롬프트</h4>
+          <div class="prompt-box">
+            ${tip.prompt}
+            <button class="copy-btn" onclick="event.stopPropagation(); copyPrompt(this)">복사</button>
+          </div>
+        </div>
+        <div class="detail-section">
+          <h4>📋 상세 가이드</h4>
+          <ul class="tip-list">${detailItems}</ul>
+        </div>
+        ${warningHTML ? `<div class="detail-section">${warningHTML}</div>` : ''}
+        <div class="tools-used-row">${toolsHTML}</div>
+      </div>
+    `;
+
+    card.addEventListener('click', () => {
+      const wasExpanded = card.classList.contains('expanded');
+      document.querySelectorAll('.tip-card.expanded').forEach(c => c.classList.remove('expanded'));
+      if (!wasExpanded) {
+        card.classList.add('expanded');
+        setTimeout(() => card.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
+      }
+    });
+
+    grid.appendChild(card);
+  });
+
+  if (filtered.length === 0) {
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:60px;color:var(--text-dim);">
+      검색 결과가 없습니다. 다른 키워드로 시도해보세요.
+    </div>`;
+  }
+}
+
+function copyPrompt(btn) {
+  const box = btn.parentElement;
+  const text = box.textContent.replace('복사', '').trim();
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = '✓ 복사됨';
+    setTimeout(() => btn.textContent = '복사', 1500);
+  });
+}
+
+// Filter buttons
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderCards(btn.dataset.filter, document.getElementById('searchInput').value);
+  });
+});
+
+// Search
+let searchTimeout;
+document.getElementById('searchInput').addEventListener('input', (e) => {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(() => {
+    const activeFilter = document.querySelector('.filter-btn.active').dataset.filter;
+    renderCards(activeFilter, e.target.value);
+  }, 200);
+});
+
+// Init
+renderCards();
+</script>
+</body>
+</html>
