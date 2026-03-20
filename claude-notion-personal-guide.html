@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude × Notion 일상 활용 가이드</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;500;700&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #faf9f6;
+  --surface: #ffffff;
+  --surface-raised: #f5f3ef;
+  --surface-hover: #edeae4;
+  --border: #e2ddd5;
+  --border-accent: #c4b8a8;
+  --text: #2c2825;
+  --text-muted: #6b635a;
+  --text-dim: #9e958a;
+  --accent: #c67b48;
+  --accent-bright: #d4894f;
+  --accent-dim: #a86638;
+  --accent-bg: #c67b4810;
+  --notion: #000000;
+  --claude: #c67b48;
+  --success: #5a9e6f;
+  --warning: #c69a48;
+  --danger: #c65a48;
+  --tag-daily: #5a8ec6;
+  --tag-health: #5a9e6f;
+  --tag-finance: #c69a48;
+  --tag-study: #8b6ec6;
+  --tag-travel: #c6485a;
+  --tag-creative: #c67b48;
+  --tag-social: #48a0c6;
+  --tag-home: #6b8e5a;
+  --radius: 14px;
+  --radius-sm: 10px;
+  --shadow: 0 2px 12px rgba(44,40,37,0.06);
+  --shadow-hover: 0 8px 32px rgba(44,40,37,0.1);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Noto Sans KR', sans-serif;
+  line-height: 1.75;
+  overflow-x: hidden;
+}
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* Hero */
+.hero {
+  position: relative;
+  min-height: 46vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 72px 24px 48px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #f0ece4 0%, var(--bg) 100%);
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23c4b8a8' fill-opacity='0.08'%3E%3Ccircle cx='30' cy='30' r='1.5'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  pointer-events: none;
+}
+
+.hero-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 28px;
+  box-shadow: var(--shadow);
+  animation: fadeUp 0.7s ease-out;
+}
+
+.hero-badge .dot {
+  width: 7px; height: 7px;
+  background: var(--success);
+  border-radius: 50%;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.4} }
+
+.hero h1 {
+  position: relative;
+  font-family: 'DM Serif Display', serif;
+  font-size: clamp(32px, 5.5vw, 58px);
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  margin-bottom: 18px;
+  color: var(--text);
+  animation: fadeUp 0.7s ease-out 0.1s both;
+}
+
+.hero h1 .em {
+  font-style: italic;
+  color: var(--accent);
+}
+
+.hero p {
+  position: relative;
+  max-width: 520px;
+  font-size: 15px;
+  color: var(--text-muted);
+  font-weight: 300;
+  animation: fadeUp 0.7s ease-out 0.2s both;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.stats-bar {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  gap: 40px;
+  padding: 24px;
+  margin-top: 32px;
+  animation: fadeUp 0.7s ease-out 0.3s both;
+}
+
+.stat { text-align: center; }
+.stat-num {
+  font-family: 'DM Serif Display', serif;
+  font-size: 30px;
+  color: var(--accent);
+}
+.stat-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+/* Container */
+.container {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 24px 80px;
+}
+
+/* Filter */
+.filter-section {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--bg);
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 36px;
+  animation: fadeUp 0.7s ease-out 0.4s both;
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.filter-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-right: 6px;
+  font-weight: 500;
+}
+
+.filter-btn {
+  padding: 5px 14px;
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-family: 'Noto Sans KR', sans-serif;
+  cursor: pointer;
+  transition: all 0.25s;
+  white-space: nowrap;
+}
+
+.filter-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-bg);
+}
+
+.filter-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.search-input {
+  flex: 1;
+  min-width: 180px;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-family: 'Noto Sans KR', sans-serif;
+  outline: none;
+  transition: border-color 0.25s;
+}
+.search-input:focus { border-color: var(--accent); }
+.search-input::placeholder { color: var(--text-dim); }
+
+/* Cards */
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 18px;
+}
+
+.tip-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: var(--shadow);
+  animation: cardIn 0.5s ease-out both;
+}
+
+.tip-card:hover {
+  border-color: var(--border-accent);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
+}
+
+.tip-card.expanded {
+  grid-column: 1 / -1;
+  border-color: var(--accent);
+}
+
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.card-header {
+  padding: 20px 20px 14px;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.card-icon {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 11px;
+  font-size: 21px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+}
+
+.card-meta { flex: 1; min-width: 0; }
+
+.card-tags {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.tag {
+  padding: 2px 9px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.tag-daily { background: #5a8ec612; color: var(--tag-daily); }
+.tag-health { background: #5a9e6f12; color: var(--tag-health); }
+.tag-finance { background: #c69a4812; color: var(--tag-finance); }
+.tag-study { background: #8b6ec612; color: var(--tag-study); }
+.tag-travel { background: #c6485a12; color: var(--tag-travel); }
+.tag-creative { background: #c67b4812; color: var(--tag-creative); }
+.tag-social { background: #48a0c612; color: var(--tag-social); }
+.tag-home { background: #6b8e5a12; color: var(--tag-home); }
+
+.card-title {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.card-desc {
+  padding: 0 20px;
+  font-size: 14px;
+  color: var(--text-muted);
+  font-weight: 300;
+}
+
+.card-footer {
+  padding: 12px 20px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.difficulty { display: flex; gap: 3px; }
+.diff-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+}
+.diff-dot.filled { background: var(--accent); }
+
+.expand-hint {
+  font-size: 12px;
+  color: var(--text-dim);
+  transition: color 0.2s;
+}
+.tip-card:hover .expand-hint { color: var(--accent); }
+
+/* Detail */
+.card-detail {
+  display: none;
+  padding: 0 20px 24px;
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+}
+
+.tip-card.expanded .card-detail { display: block; }
+
+.detail-section { margin-top: 18px; }
+
+.detail-section h4 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  margin-bottom: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.prompt-box {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--text-muted);
+  position: relative;
+  margin-bottom: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.prompt-box .user-msg { color: var(--accent-dim); font-weight: 500; }
+
+.copy-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 4px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.copy-btn:hover {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.tip-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.tip-list li {
+  padding: 10px 14px;
+  background: var(--surface-raised);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  color: var(--text-muted);
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  line-height: 1.6;
+}
+
+.tip-list li::before {
+  content: '·';
+  color: var(--accent);
+  font-weight: 900;
+  font-size: 18px;
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+
+.warning-box {
+  background: #c69a4808;
+  border: 1px solid #c69a4820;
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--warning);
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.tool-used {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin: 2px;
+}
+
+.tools-used-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 12px;
+}
+
+.scenario-box {
+  background: var(--accent-bg);
+  border: 1px solid #c67b4820;
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+  line-height: 1.7;
+}
+
+.scenario-box strong { color: var(--accent-dim); }
+
+/* Footer */
+.footer-note {
+  text-align: center;
+  padding: 40px 24px;
+  font-size: 13px;
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
+  margin-top: 40px;
+}
+
+@media (max-width: 600px) {
+  .stats-bar { gap: 20px; }
+  .cards-grid { grid-template-columns: 1fr; }
+  .filter-row { gap: 5px; }
+}
+</style>
+</head>
+<body>
+
+<section class="hero">
+  <div class="hero-badge">
+    <span class="dot"></span>
+    개인 일상 활용 편
+  </div>
+  <h1>Claude × Notion<br><span class="em">일상을 정리하다</span></h1>
+  <p>일기, 가계부, 독서, 여행, 건강 관리까지 — Notion 연동으로 일상의 모든 기록을 자동화하는 팁 모음입니다.</p>
+  <div class="stats-bar">
+    <div class="stat">
+      <div class="stat-num">20</div>
+      <div class="stat-label">활용 팁</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">8</div>
+      <div class="stat-label">카테고리</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">∞</div>
+      <div class="stat-label">가능성</div>
+    </div>
+  </div>
+</section>
+
+<div class="container">
+  <div class="filter-section">
+    <div class="filter-row">
+      <span class="filter-label">카테고리</span>
+      <button class="filter-btn active" data-filter="all">전체</button>
+      <button class="filter-btn" data-filter="daily">📝 일상기록</button>
+      <button class="filter-btn" data-filter="health">💪 건강</button>
+      <button class="filter-btn" data-filter="finance">💰 재정</button>
+      <button class="filter-btn" data-filter="study">📚 학습</button>
+      <button class="filter-btn" data-filter="travel">✈️ 여행</button>
+      <button class="filter-btn" data-filter="creative">🎨 창작</button>
+      <button class="filter-btn" data-filter="social">🤝 인간관계</button>
+      <button class="filter-btn" data-filter="home">🏠 집·생활</button>
+      <input type="text" class="search-input" placeholder="팁 검색..." id="searchInput">
+    </div>
+  </div>
+  <div class="cards-grid" id="cardsGrid"></div>
+  <div class="footer-note">
+    카드를 클릭하면 예시 프롬프트와 실전 활용 가이드가 펼쳐집니다 ✦
+  </div>
+</div>
+
+<script>
+const tips = [
+  {
+    id: 1, icon: "📓", tags: ["daily"],
+    title: "일기 & 회고 자동화",
+    desc: "하루를 간단히 말하면 Claude가 구조화된 일기 페이지를 Notion에 만들어줍니다.",
+    difficulty: 1,
+    prompt: `<span class="user-msg">오늘 하루 기록 좀 해줘.\n아침에 카페에서 책 읽었고, 점심에 친구 만나서 파스타 먹었어. 오후에 운동하고 저녁에 넷플릭스 봤어. 기분은 전반적으로 좋았는데 약간 피곤했어.\n날짜별 일기 DB에 저장해줘.</span>`,
+    detail: [
+      "일기 DB에 날짜, 기분(셀렉트), 키워드(멀티셀렉트), 에너지(숫자 1~5) 속성을 설계해두면 나중에 패턴 분석 가능",
+      "Claude가 대화체를 구조화된 마크다운 일기로 변환하여 저장",
+      "매일 반복할 필요 없이 '오늘 기록해줘'만 말하면 자동으로 오늘 날짜에 생성",
+      "한 주가 끝나면 '이번 주 일기 요약해줘'로 위클리 리뷰도 자동화 가능"
+    ],
+    scenario: "매일 10초만 투자해서 하루를 말하면, 한 달 후 자신의 생활 패턴이 데이터로 보입니다.",
+    warning: null,
+    tools: ["notion-search", "notion-create-pages"]
+  },
+  {
+    id: 2, icon: "🏃", tags: ["health"],
+    title: "운동 기록 & 루틴 관리",
+    desc: "운동 내용을 말하면 기록하고, 지난 기록을 분석해서 다음 루틴을 제안합니다.",
+    difficulty: 1,
+    prompt: `<span class="user-msg">오늘 운동 기록해줘.\n벤치프레스 60kg 5세트, 덤벨 플라이 12kg 4세트, 트라이셉 푸시다운 3세트.\n유산소 러닝머신 30분. 컨디션은 보통.</span>`,
+    detail: [
+      "운동 DB에 날짜, 부위(멀티셀렉트), 운동종목, 세트/무게 상세, 유산소 시간, 컨디션 등을 기록",
+      "'이번 달 운동 기록 분석해줘'로 부위별 빈도, 무게 변화 추이 확인 가능",
+      "'다음 주 상체 루틴 짜줘'라고 하면 기존 기록 기반으로 점진적 과부하 반영한 루틴 제안",
+      "DB 뷰를 캘린더로 설정하면 운동 일지를 한눈에 확인"
+    ],
+    scenario: "운동 끝나고 쉬면서 10초만 기록. 3개월 뒤 확실한 성장 데이터가 쌓입니다.",
+    warning: null,
+    tools: ["notion-create-pages", "notion-search", "notion-fetch"]
+  },
+  {
+    id: 3, icon: "💸", tags: ["finance"],
+    title: "가계부 & 소비 패턴 분석",
+    desc: "지출을 말하면 가계부에 기록하고, 월별 소비 패턴을 분석해줍니다.",
+    difficulty: 2,
+    prompt: `<span class="user-msg">오늘 지출 기록해줘.\n- 아침 커피 4,500원 (카페)\n- 점심 김치찌개 9,000원 (식비)\n- 넷플릭스 17,000원 (구독)\n- 택시 8,200원 (교통)</span>`,
+    detail: [
+      "가계부 DB: 날짜, 항목(제목), 금액(숫자), 카테고리(셀렉트: 식비/교통/문화/구독 등), 결제수단(셀렉트)",
+      "한 번에 여러 건을 일괄 등록 가능 (create-pages 배치)",
+      "'이번 달 카테고리별 지출 정리해줘'로 소비 분석 — DB 차트 뷰와 함께 활용",
+      "'지난달 대비 식비가 얼마나 늘었는지 알려줘'로 비교 분석"
+    ],
+    scenario: "영수증 사진 대신 한 줄 메시지. 월말에 '어디에 돈이 새는지' 바로 파악됩니다.",
+    warning: "금액 속성은 반드시 NUMBER 타입(FORMAT 'won' 또는 'number')으로 설정해야 집계가 가능합니다.",
+    tools: ["notion-create-pages", "notion-search", "notion-fetch"]
+  },
+  {
+    id: 4, icon: "📖", tags: ["study"],
+    title: "독서 노트 & 서재 관리",
+    desc: "읽은 책의 메모를 구조화하고, 개인 서재 DB로 독서 기록을 관리합니다.",
+    difficulty: 1,
+    prompt: `<span class="user-msg">"아주 작은 습관의 힘" 다 읽었어.\n핵심 내용 정리해서 독서 노트로 만들어줘.\n별점 4.5, 카테고리는 자기계발로.</span>`,
+    detail: [
+      "서재 DB: 책 제목, 저자, 카테고리(셀렉트), 별점(숫자), 상태(셀렉트: 읽는중/완독/보류), 시작일/완독일(날짜)",
+      "독서 노트는 DB 페이지의 본문에 핵심 요약 + 인상 깊은 구절 + 실천 포인트 형태로 작성",
+      "'올해 읽은 책 중 별점 4 이상만 보여줘'로 베스트 도서 필터링",
+      "'자기계발 카테고리에서 공통으로 나오는 주제가 뭐야?'로 크로스 분석"
+    ],
+    scenario: "책 한 권을 덮고 30초. 1년 후 나만의 지식 데이터베이스가 완성됩니다.",
+    warning: null,
+    tools: ["notion-create-pages", "notion-search"]
+  },
+  {
+    id: 5, icon: "✈️", tags: ["travel"],
+    title: "여행 계획 자동 생성",
+    desc: "여행지, 날짜, 관심사만 말하면 일정표와 준비물 체크리스트를 만들어줍니다.",
+    difficulty: 2,
+    prompt: `<span class="user-msg">4월에 오사카 3박 4일 여행 가려고 해.\n맛집 위주 + 벚꽃 스팟 중심으로 일정 짜서 Notion에 만들어줘.\n준비물 체크리스트도 같이.</span>`,
+    detail: [
+      "여행 페이지 하위에 Day 1~4 서브페이지를 생성하여 일정별 상세 계획 작성",
+      "준비물 체크리스트는 토글 블록 + 체크박스로 카테고리별 정리",
+      "웹 검색으로 최신 맛집·관광지 정보를 조사한 뒤 Notion에 반영",
+      "여행 후 '오사카 여행 후기 정리해줘'로 사진 캡션·일정 기반 회고록 자동 생성"
+    ],
+    scenario: "계획 짜느라 반나절 쓰던 시간을 5분으로. 여행은 즐기는 데 집중하세요.",
+    warning: "웹 검색 결과는 시점에 따라 정보가 달라질 수 있으니, 예약 전 공식 사이트에서 최종 확인을 권장합니다.",
+    tools: ["notion-create-pages"]
+  },
+  {
+    id: 6, icon: "🍽️", tags: ["health", "home"],
+    title: "식단 관리 & 장보기 리스트",
+    desc: "이번 주 식단을 짜고, 필요한 재료를 장보기 리스트로 자동 변환합니다.",
+    difficulty: 2,
+    prompt: `<span class="user-msg">이번 주 식단 짜줘. 조건:\n- 2인 기준, 저녁만\n- 예산 주 7만원 이내\n- 한식 위주, 수요일은 파스타\nNotion에 식단표 만들고 장보기 리스트도 따로 만들어줘.</span>`,
+    detail: [
+      "식단표 페이지: 요일별 메뉴를 테이블로 정리 (조리 시간, 난이도 포함)",
+      "장보기 리스트: 재료를 카테고리별(채소/육류/양념 등)로 그룹핑 + 예상 가격",
+      "남은 재료를 말하면 '이 재료로 뭐 해먹을 수 있어?'로 메뉴 추천",
+      "식단 DB를 만들면 반복 메뉴를 태그로 관리하고 장보기를 재활용 가능"
+    ],
+    scenario: "매주 월요일에 5분. '오늘 뭐 먹지?' 고민에서 해방됩니다.",
+    warning: null,
+    tools: ["notion-create-pages"]
+  },
+  {
+    id: 7, icon: "🎯", tags: ["daily"],
+    title: "목표 설정 & 습관 트래커",
+    desc: "연간/월간/주간 목표를 구조화하고, 일일 습관 체크리스트를 자동 생성합니다.",
+    difficulty: 2,
+    prompt: `<span class="user-msg">2026년 개인 목표 DB를 만들어줘.\n- 영어 공부 (매일 30분)\n- 운동 (주 4회)\n- 독서 (월 2권)\n- 저축 (월 50만원)\n각각 진행률 추적이 되게 만들어줘.</span>`,
+    detail: [
+      "목표 DB: 목표명, 카테고리, 주기(일/주/월), 목표량, 현재량, 진행률(포뮬러), 상태",
+      "습관 트래커 DB: 날짜별 체크박스 속성으로 일일 습관 달성 여부 기록",
+      "롤업으로 주간/월간 달성률 자동 계산 가능",
+      "'이번 달 습관 달성률 분석해줘'로 어떤 습관이 잘 지켜지고 있는지 파악"
+    ],
+    scenario: "작심삼일 방지기. 데이터가 쌓이면 '안 하기 아까운' 심리가 작동합니다.",
+    warning: null,
+    tools: ["notion-create-database", "notion-create-pages", "notion-create-view"]
+  },
+  {
+    id: 8, icon: "🎬", tags: ["creative"],
+    title: "영화·드라마·음악 감상 기록",
+    desc: "본 작품에 대한 간단한 감상을 말하면 미디어 라이브러리에 정리합니다.",
+    difficulty: 1,
+    prompt: `<span class="user-msg">어제 "인터스텔라" 다시 봤어. 별점 5점.\n감상: 볼 때마다 새로운 게 보인다. 이번엔 머피와 쿠퍼의 관계에 더 집중해서 봤는데 눈물이 줄줄.\n미디어 감상 DB에 추가해줘.</span>`,
+    detail: [
+      "미디어 DB: 제목, 타입(셀렉트: 영화/드라마/음악/팟캐스트), 장르(멀티셀렉트), 별점, 감상일, 한줄평, 상세 감상",
+      "갤러리 뷰로 설정하면 포스터 기반 비주얼 라이브러리 구성 가능",
+      "'올해 본 영화 중 별점 순으로 정리해줘'로 개인 랭킹 생성",
+      "'SF 장르만 모아서 보여줘'로 취향 분석"
+    ],
+    scenario: "넷플릭스 끝나고 한 마디만 남기면, 나만의 미디어 아카이브가 자란다.",
+    warning: null,
+    tools: ["notion-create-pages", "notion-search"]
+  },
+  {
+    id: 9, icon: "🎂", tags: ["social"],
+    title: "기념일·생일·약속 관리",
+    desc: "중요한 날짜와 인간관계 정보를 DB로 관리하고 리마인더를 설정합니다.",
+    difficulty: 1,
+    prompt: `<span class="user-msg">내 인간관계 DB를 만들어줘.\n이름, 관계(가족/친구/직장), 생일, 기념일, 마지막 연락일, 좋아하는 것, 메모.\n그리고 달력 뷰로 생일이 보이게 해줘.</span>`,
+    detail: [
+      "인간관계 DB + 캘린더 뷰로 생일·기념일을 한눈에 파악",
+      "'다음 달 생일인 사람 알려줘'로 선물 준비 타이밍 관리",
+      "'마지막 연락이 3개월 이상 된 친구 찾아줘'로 소홀한 관계 리마인드",
+      "선물 아이디어를 '좋아하는 것' 속성 기반으로 Claude에게 추천 요청 가능"
+    ],
+    scenario: "소중한 사람들의 기념일, 다시는 깜빡하지 않습니다.",
+    warning: null,
+    tools: ["notion-create-database", "notion-create-view", "notion-search"]
+  },
+  {
+    id: 10, icon: "📝", tags: ["study"],
+    title: "자격증·시험 공부 계획표",
+    desc: "시험 범위와 D-day를 입력하면 일별 학습 계획을 생성합니다.",
+    difficulty: 2,
+    prompt: `<span class="user-msg">정보처리기사 실기 준비하려고 해. 시험일은 5월 17일.\n과목: 소프트웨어 설계, DB, 알고리즘, 보안, 실무.\n하루 2시간 공부 가능. 주말은 4시간.\n공부 계획표를 Notion에 만들어줘.</span>`,
+    detail: [
+      "학습 계획 DB: 날짜, 과목, 세부 주제, 학습 시간, 완료 여부(체크박스), 이해도(셀렉트)",
+      "D-day 포뮬러로 남은 일수 자동 계산",
+      "타임라인 뷰로 전체 학습 로드맵을 시각화",
+      "'이해도가 낮은 과목 모아줘'로 취약 과목 집중 복습 계획 수립"
+    ],
+    scenario: "막막한 시험 준비, 일별로 쪼개면 '오늘 할 것'만 하면 됩니다.",
+    warning: null,
+    tools: ["notion-create-database", "notion-create-pages", "notion-create-view"]
+  },
+  {
+    id: 11, icon: "💊", tags: ["health"],
+    title: "건강 기록 & 증상 추적",
+    desc: "일별 컨디션, 수면, 증상을 기록하고 패턴을 분석합니다.",
+    difficulty: 1,
+    prompt: `<span class="user-msg">오늘 건강 기록:\n수면 6.5시간, 컨디션 3/5, 두통 약간, 카페인 2잔.\n건강 일지 DB에 저장해줘.</span>`,
+    detail: [
+      "건강 DB: 날짜, 수면 시간(숫자), 컨디션(셀렉트 1~5), 증상(멀티셀렉트), 카페인(숫자), 물 섭취량, 메모",
+      "'이번 달 수면 평균 알려줘'로 수면 패턴 파악",
+      "'두통이 있었던 날의 공통점 분석해줘' — 카페인·수면과 상관관계 발견 가능",
+      "차트 뷰로 수면 시간 추이를 시각적으로 확인"
+    ],
+    scenario: "매일 1분 기록이 병원 갈 때 최고의 참고 자료가 됩니다.",
+    warning: "건강 기록은 참고용입니다. 의료적 판단은 반드시 전문의와 상의하세요.",
+    tools: ["notion-create-pages", "notion-search", "notion-fetch"]
+  },
+  {
+    id: 12, icon: "🏠", tags: ["home"],
+    title: "집안일 분담 & 가사 스케줄",
+    desc: "가사 분담표를 만들고, 주기적인 집안일 스케줄을 관리합니다.",
+    difficulty: 1,
+    prompt: `<span class="user-msg">2인 가구 가사 분담표를 Notion에 만들어줘.\n- 매일: 설거지, 쓰레기, 환기\n- 주 1회: 청소기, 빨래, 화장실\n- 월 1회: 에어컨 필터, 냉장고 정리\n요일별로 A/B 번갈아서 배정해줘.</span>`,
+    detail: [
+      "가사 DB: 업무명, 주기(셀렉트: 매일/주간/월간), 담당자, 요일(멀티셀렉트), 마지막 수행일",
+      "보드 뷰(담당자별 그룹)로 각자의 할일을 한눈에 확인",
+      "캘린더 뷰로 이번 주 가사 스케줄 파악",
+      "'이번 달 월간 가사 중 아직 안 한 거 알려줘'로 누락 방지"
+    ],
+    scenario: "'누가 할 차례야?' 갈등 종결자. 데이터 앞에 공정합니다.",
+    warning: null,
+    tools: ["notion-create-database", "notion-create-pages", "notion-create-view"]
+  },
+  {
+    id: 13, icon: "🎨", tags: ["creative"],
+    title: "아이디어 노트 & 영감 수집",
+    desc: "떠오르는 아이디어를 바로 Notion에 저장하고, 나중에 분류·발전시킵니다.",
+    difficulty: 1,
+    prompt: `<span class="user-msg">아이디어 떠올랐어: "날씨에 따라 자동으로 옷 추천해주는 앱. 옷장을 사진으로 등록하면 AI가 코디해줌"\n카테고리는 앱 아이디어, 상태는 씨앗으로 저장해줘.</span>`,
+    detail: [
+      "아이디어 DB: 제목, 카테고리(셀렉트: 앱/콘텐츠/사업/일상/기타), 상태(셀렉트: 씨앗→발아→성장→실행), 메모, 날짜",
+      "순간적으로 떠오른 생각을 Claude에게 말하듯 전달하면 구조화해서 저장",
+      "'이번 달 아이디어 중 앱 카테고리만 보여줘'로 필터링",
+      "'씨앗 상태인 아이디어 중 실현 가능성 높은 거 분석해줘'로 발전 가능성 평가"
+    ],
+    scenario: "샤워 중 떠오른 천재적 아이디어, 이제 잊어버리지 않습니다.",
+    warning: null,
+    tools: ["notion-create-pages", "notion-search"]
+  },
+  {
+    id: 14, icon: "🧳", tags: ["travel"],
+    title: "여행 경비 실시간 기록",
+    desc: "여행 중 지출을 실시간으로 기록하고, 예산 대비 현황을 추적합니다.",
+    difficulty: 2,
+    prompt: `<span class="user-msg">오사카 여행 경비 기록해줘.\n- 간사이공항→난바 라피트 1,290엔\n- 점심 라멘 890엔\n- 오사카성 입장료 600엔\n- 편의점 간식 430엔\n환율 900원 기준으로 원화 환산도 해줘.</span>`,
+    detail: [
+      "여행 경비 DB: 항목, 금액(현지), 통화, 환율, 원화 환산(포뮬러), 카테고리, 날짜",
+      "롤업으로 카테고리별 합계, 일별 합계 자동 계산",
+      "'현재까지 총 지출이 얼마야? 예산 대비 몇 %?'로 실시간 예산 관리",
+      "여행 후 '카테고리별 지출 비율 정리해줘'로 여행 경비 분석 리포트"
+    ],
+    scenario: "여행 중 가계부는 귀찮지만, 한 줄이면 Claude가 다 해줍니다.",
+    warning: "환율은 기록 시점 기준입니다. 정산 시 실제 결제 환율과 차이가 있을 수 있습니다.",
+    tools: ["notion-create-pages", "notion-search", "notion-fetch"]
+  },
+  {
+    id: 15, icon: "📚", tags: ["study"],
+    title: "외국어 단어장 & 복습 시스템",
+    desc: "새로운 단어를 등록하면 예문과 함께 저장하고, 복습 주기를 관리합니다.",
+    difficulty: 2,
+    prompt: `<span class="user-msg">영어 단어 추가해줘:\n- resilient: 회복력 있는\n- eloquent: 유창한\n- ephemeral: 일시적인\n각각 예문도 만들어서 단어장 DB에 저장해줘.</span>`,
+    detail: [
+      "단어장 DB: 단어, 뜻, 예문, 품사(셀렉트), 난이도(셀렉트), 복습 횟수(숫자), 마지막 복습일, 암기 상태",
+      "Claude가 단어의 예문, 유의어, 어원 등을 자동으로 추가",
+      "'암기 안 된 단어 10개 랜덤으로 퀴즈 내줘'로 Notion 기반 복습",
+      "복습 횟수와 마지막 복습일 기반으로 에빙하우스 망각곡선 스타일 관리"
+    ],
+    scenario: "단어 외우기만큼 지루한 건 없지만, 퀴즈로 바뀌면 게임이 됩니다.",
+    warning: null,
+    tools: ["notion-create-pages", "notion-search", "notion-fetch"]
+  },
+  {
+    id: 16, icon: "🎁", tags: ["social"],
+    title: "선물 아이디어 & 위시리스트",
+    desc: "받고 싶은 것·주고 싶은 것을 관리하고, 기념일에 맞춰 추천을 받습니다.",
+    difficulty: 1,
+    prompt: `<span class="user-msg">위시리스트 DB를 만들어줘.\n유형: 내 위시리스트 / 선물 아이디어\n속성: 아이템명, 가격대, 링크, 대상(누구에게), 우선순위, 구매여부.\n\n그리고 바로 몇 개 등록해줘:\n- 나: 에어팟 맥스, 80만원대\n- 엄마 생일: 안마기, 15~20만원\n- 친구 결혼: 신혼부부 식기세트, 10만원대</span>`,
+    detail: [
+      "위시리스트 DB: 아이템, 유형(셀렉트: 내 위시/선물), 대상, 가격대, 링크(URL), 우선순위, 구매여부(체크박스)",
+      "인간관계 DB와 릴레이션을 연결하면 '그 사람이 좋아하는 것' 기반 선물 추천 가능",
+      "'다음 달 생일인 사람의 선물 아이디어 보여줘'로 타이밍 관리",
+      "'10만원 이하 선물 아이디어 추천해줘'로 예산 기반 필터링"
+    ],
+    scenario: "센스 있는 선물의 비결은 평소에 기록해두는 것. Claude가 도와드립니다.",
+    warning: null,
+    tools: ["notion-create-database", "notion-create-pages"]
+  },
+  {
+    id: 17, icon: "💰", tags: ["finance"],
+    title: "구독 서비스 관리 & 정리",
+    desc: "사용 중인 모든 구독 서비스를 정리하고, 월별 총 비용을 계산합니다.",
+    difficulty: 1,
+    prompt: `<span class="user-msg">내 구독 서비스 정리 DB 만들고 이것들 등록해줘:\n- 넷플릭스 프리미엄 17,000원/월\n- 유튜브 프리미엄 14,900원/월\n- 스포티파이 10,900원/월\n- 노션 개인 Pro $10/월\n- ChatGPT Plus $20/월\n총 월 비용도 계산해줘.</span>`,
+    detail: [
+      "구독 DB: 서비스명, 가격, 결제 주기(월/연), 결제일, 카테고리(엔터/생산성/뉴스), 상태(사용중/해지예정), 메모",
+      "포뮬러로 연간 비용 자동 환산",
+      "'한 달 구독 총액이 얼마야?'로 전체 비용 파악",
+      "'3개월 이상 안 쓴 구독 있어?'로 불필요한 구독 정리 유도"
+    ],
+    scenario: "구독 좀비에서 탈출. 매달 어디에 얼마가 나가는지 투명하게.",
+    warning: null,
+    tools: ["notion-create-database", "notion-create-pages"]
+  },
+  {
+    id: 18, icon: "📦", tags: ["home"],
+    title: "택배·주문 추적 & 재구매 리스트",
+    desc: "주문한 물건을 기록하고 배송 상태를 추적, 소모품은 재구매 주기를 관리합니다.",
+    difficulty: 1,
+    prompt: `<span class="user-msg">주문 기록 DB 만들어줘.\n속성: 상품명, 주문처, 주문일, 도착예정일, 금액, 상태(주문/배송중/도착/반품), 재구매주기.\n\n그리고 등록:\n- 정수기 필터 (쿠팡, 15,000원, 3개월마다 재구매)\n- 고양이 사료 (쿠팡, 32,000원, 1개월마다)</span>`,
+    detail: [
+      "상태를 보드 뷰로 만들면 '주문→배송중→도착' 칸반 형태로 추적 가능",
+      "재구매 주기가 있는 아이템은 '재구매 시기 지난 소모품 알려줘'로 리마인드",
+      "월별 지출과 연결하면 쇼핑 비용 추적에도 활용",
+      "'지난 3개월 구매 내역 요약해줘'로 불필요한 충동구매 분석"
+    ],
+    scenario: "정수기 필터 교체, 고양이 사료 주문을 다시는 깜빡하지 않습니다.",
+    warning: null,
+    tools: ["notion-create-database", "notion-create-pages", "notion-create-view"]
+  },
+  {
+    id: 19, icon: "🗓️", tags: ["daily"],
+    title: "주간 리뷰 & 다음 주 계획",
+    desc: "이번 주의 기록을 분석하고 다음 주 계획을 자동으로 생성합니다.",
+    difficulty: 2,
+    prompt: `<span class="user-msg">이번 주 주간 리뷰 해줘.\n내 Notion에서 이번 주 일기, 운동, 지출 기록을 읽고:\n1. 이번 주 요약\n2. 잘한 점 / 개선할 점\n3. 다음 주 목표 제안\n을 정리해서 위클리 리뷰 페이지로 만들어줘.</span>`,
+    detail: [
+      "여러 DB(일기, 운동, 가계부, 습관)를 교차 검색하여 종합 분석",
+      "Claude가 패턴을 읽고 자동으로 인사이트 도출 (예: '수요일 운동을 빠지면 목요일 컨디션이 떨어지는 패턴')",
+      "리뷰 페이지는 월간 리뷰 페이지 하위에 자동 구조화",
+      "다음 주 목표를 목표 DB에 연동하여 추적 가능"
+    ],
+    scenario: "매주 일요일 저녁 5분. 한 주를 되돌아보고 다음 주를 설계합니다.",
+    warning: "여러 DB를 교차 분석하므로, 각 DB의 날짜 속성 형식을 통일해두면 더 정확합니다.",
+    tools: ["notion-search", "notion-fetch", "notion-create-pages"]
+  },
+  {
+    id: 20, icon: "🧹", tags: ["daily", "home"],
+    title: "디지털 정리 & 워크스페이스 청소",
+    desc: "오래된 페이지를 찾아 아카이브하고, Notion 워크스페이스를 깔끔하게 정리합니다.",
+    difficulty: 1,
+    prompt: `<span class="user-msg">내 Notion 정리 좀 도와줘.\n- 3개월 이상 안 건드린 페이지 찾아줘\n- 제목이 "제목 없음"인 빈 페이지 있으면 알려줘\n- 아카이브할 만한 것들은 "Archive" 페이지 아래로 옮겨줘</span>`,
+    detail: [
+      "notion-search로 날짜 필터링 후 오래된 문서 탐색",
+      "notion-move-pages로 아카이브 페이지 하위로 일괄 이동",
+      "정기적으로 (월 1회 등) 실행하면 Notion이 늘 깔끔하게 유지됨",
+      "'현재 내 워크스페이스 구조를 정리해서 보여줘'로 전체 현황 파악"
+    ],
+    scenario: "디지털 대청소도 Claude에게 맡기세요. 주 1회면 충분합니다.",
+    warning: "페이지 이동 전 Claude가 목록을 보여줄 때 반드시 확인 후 진행하세요. 중요한 문서가 섞여있을 수 있습니다.",
+    tools: ["notion-search", "notion-move-pages"]
+  }
+];
+
+const tagLabels = {
+  daily: "📝 일상기록", health: "💪 건강", finance: "💰 재정",
+  study: "📚 학습", travel: "✈️ 여행", creative: "🎨 창작",
+  social: "🤝 인간관계", home: "🏠 집·생활"
+};
+
+function renderCards(filter = 'all', query = '') {
+  const grid = document.getElementById('cardsGrid');
+  grid.innerHTML = '';
+
+  const filtered = tips.filter(tip => {
+    const matchFilter = filter === 'all' || tip.tags.includes(filter);
+    const matchQuery = !query ||
+      tip.title.toLowerCase().includes(query.toLowerCase()) ||
+      tip.desc.toLowerCase().includes(query.toLowerCase()) ||
+      tip.tags.some(t => tagLabels[t].includes(query));
+    return matchFilter && matchQuery;
+  });
+
+  filtered.forEach((tip, i) => {
+    const card = document.createElement('div');
+    card.className = 'tip-card';
+    card.style.animationDelay = `${i * 0.04}s`;
+
+    const diffDots = Array.from({length: 3}, (_, j) =>
+      `<div class="diff-dot ${j < tip.difficulty ? 'filled' : ''}"></div>`
+    ).join('');
+
+    const tagHTML = tip.tags.map(t =>
+      `<span class="tag tag-${t}">${tagLabels[t]}</span>`
+    ).join('');
+
+    const toolsHTML = tip.tools.map(t =>
+      `<span class="tool-used">⚙ ${t}</span>`
+    ).join('');
+
+    const detailItems = tip.detail.map(d =>
+      `<li>${d}</li>`
+    ).join('');
+
+    const warningHTML = tip.warning ?
+      `<div class="warning-box">⚠️ ${tip.warning}</div>` : '';
+
+    const scenarioHTML = tip.scenario ?
+      `<div class="scenario-box"><strong>💡 활용 시나리오:</strong> ${tip.scenario}</div>` : '';
+
+    card.innerHTML = `
+      <div class="card-header">
+        <div class="card-icon">${tip.icon}</div>
+        <div class="card-meta">
+          <div class="card-tags">${tagHTML}</div>
+          <div class="card-title">${tip.title}</div>
+        </div>
+      </div>
+      <div class="card-desc">${tip.desc}</div>
+      <div class="card-footer">
+        <div class="difficulty">${diffDots}</div>
+        <div class="expand-hint">클릭하여 상세보기 ↓</div>
+      </div>
+      <div class="card-detail">
+        ${scenarioHTML}
+        <div class="detail-section">
+          <h4>💬 예시 프롬프트</h4>
+          <div class="prompt-box">
+            ${tip.prompt}
+            <button class="copy-btn" onclick="event.stopPropagation(); copyPrompt(this)">복사</button>
+          </div>
+        </div>
+        <div class="detail-section">
+          <h4>📋 활용 가이드</h4>
+          <ul class="tip-list">${detailItems}</ul>
+        </div>
+        ${warningHTML ? `<div class="detail-section">${warningHTML}</div>` : ''}
+        <div class="tools-used-row">${toolsHTML}</div>
+      </div>
+    `;
+
+    card.addEventListener('click', () => {
+      const wasExpanded = card.classList.contains('expanded');
+      document.querySelectorAll('.tip-card.expanded').forEach(c => c.classList.remove('expanded'));
+      if (!wasExpanded) {
+        card.classList.add('expanded');
+        setTimeout(() => card.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
+      }
+    });
+
+    grid.appendChild(card);
+  });
+
+  if (filtered.length === 0) {
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:60px;color:var(--text-dim);">
+      검색 결과가 없습니다. 다른 키워드로 시도해보세요.
+    </div>`;
+  }
+}
+
+function copyPrompt(btn) {
+  const box = btn.parentElement;
+  const text = box.textContent.replace('복사', '').trim();
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = '✓ 복사됨';
+    setTimeout(() => btn.textContent = '복사', 1500);
+  });
+}
+
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderCards(btn.dataset.filter, document.getElementById('searchInput').value);
+  });
+});
+
+let searchTimeout;
+document.getElementById('searchInput').addEventListener('input', (e) => {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(() => {
+    const activeFilter = document.querySelector('.filter-btn.active').dataset.filter;
+    renderCards(activeFilter, e.target.value);
+  }, 200);
+});
+
+renderCards();
+</script>
+</body>
+</html>
