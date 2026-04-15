@@ -1,0 +1,25 @@
+{
+  "name": "회의록 자동 생성기",
+  "short_name": "회의록",
+  "description": "음성 녹음 → AI 전사/요약 → Notion 자동 저장",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0c0b10",
+  "theme_color": "#0c0b10",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

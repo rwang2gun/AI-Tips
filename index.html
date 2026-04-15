@@ -331,6 +331,38 @@ nav{
   background:linear-gradient(160deg,#14120e 0%,#1e1812 100%);
 }
 
+/* App card — built with Claude */
+.branch-card.app:hover{
+  border-color:#ef4a5b;
+  box-shadow:0 20px 60px rgba(239,74,91,0.10);
+}
+.branch-card.app .bg-pattern{
+  background:
+    radial-gradient(circle at 30% 50%, #ef4a5b18 0%, transparent 35%),
+    radial-gradient(circle at 70% 50%, #7c6aef14 0%, transparent 40%);
+}
+.branch-card.app .card-banner{
+  background:linear-gradient(160deg,#180f12 0%,#1c1322 100%);
+}
+.branch-card.app .card-banner-glow{background:#ef4a5b}
+.branch-card.app .card-label{color:#ef4a5b}
+.branch-card.app .card-stat-num{color:#ef4a5b}
+.branch-card.app .card-cta-text{color:#ef4a5b}
+.branch-card.app .card-cta-arrow{
+  background:rgba(239,74,91,0.1);
+  color:#ef4a5b;
+}
+
+/* Apps section grid (single column wide card) */
+.apps-section{padding:60px 0 20px}
+.apps-grid{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:24px;
+  max-width:720px;
+  margin:40px auto 0;
+}
+
 .card-banner-icon{
   position:relative;
   font-size:56px;
@@ -539,6 +571,7 @@ footer a:hover{color:var(--text)}
   </div>
   <div class="nav-links">
     <a href="#guides">가이드</a>
+    <a href="#apps">앱</a>
     <a href="#tools">도구 목록</a>
     <a href="https://github.com" target="_blank">GitHub ↗</a>
   </div>
@@ -644,6 +677,48 @@ footer a:hover{color:var(--text)}
       </div>
     </a>
 
+  </div>
+</section>
+
+<!-- APPS — Built with Claude -->
+<section class="apps-section container" id="apps">
+  <div class="section-header reveal">
+    <div class="section-tag">Built with Claude</div>
+    <h2>실제로 만들어본 앱</h2>
+    <p>Claude로 설계하고 배포까지 마친 도구들. 직접 사용해볼 수 있습니다.</p>
+  </div>
+
+  <div class="apps-grid">
+    <a href="meeting-notes/" class="branch-card app reveal" style="transition-delay:0.1s">
+      <div class="card-banner">
+        <div class="bg-pattern"></div>
+        <div class="card-banner-glow"></div>
+        <div class="card-banner-icon">🎙️</div>
+      </div>
+      <div class="card-body">
+        <div class="card-label">◆ VOICE → NOTION</div>
+        <h3>회의록 자동 생성기</h3>
+        <p>모바일에서 회의를 녹음하면 Gemini가 전사·요약하고 Notion DB에 회의록 페이지로 저장합니다. 아젠다, 논의 사항, 결정 사항, To-do까지 자동 분류.</p>
+        <div class="card-stats">
+          <div class="card-stat">
+            <span class="card-stat-num">1</span>
+            <span class="card-stat-label">탭으로 시작</span>
+          </div>
+          <div class="card-stat">
+            <span class="card-stat-num">PWA</span>
+            <span class="card-stat-label">모바일 호환</span>
+          </div>
+          <div class="card-stat">
+            <span class="card-stat-num">∞</span>
+            <span class="card-stat-label">시간 길이</span>
+          </div>
+        </div>
+      </div>
+      <div class="card-cta">
+        <span class="card-cta-text">앱 열기</span>
+        <span class="card-cta-arrow">→</span>
+      </div>
+    </a>
   </div>
 </section>
 

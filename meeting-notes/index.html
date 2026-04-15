@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0c0b10">
+<title>회의록 자동 생성기</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&family=Outfit:wght@500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <header class="app-header">
+      <div class="logo">
+        <span class="dot"></span>
+        <span>회의록</span>
+      </div>
+      <a href="../" class="back-link">← AI Tips</a>
+    </header>
+
+    <section class="recorder" id="recorder">
+      <div class="status" id="status">대기 중</div>
+      <div class="timer" id="timer">00:00</div>
+      <div class="visualizer">
+        <canvas id="viz" width="300" height="80"></canvas>
+      </div>
+
+      <button class="rec-btn" id="recBtn" type="button">
+        <span class="rec-icon"></span>
+        <span class="rec-label" id="recLabel">녹음 시작</span>
+      </button>
+
+      <div class="meta-form" id="metaForm">
+        <label>
+          <span>회의 제목 (선택)</span>
+          <input type="text" id="meetingTitle" placeholder="비워두면 자동 생성">
+        </label>
+        <label>
+          <span>회의 유형</span>
+          <select id="meetingType">
+            <option value="">자동 분류</option>
+            <option value="킥오프">킥오프</option>
+            <option value="내부 논의">내부 논의</option>
+            <option value="실무 논의">실무 논의</option>
+            <option value="기타">기타</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section class="result hidden" id="result">
+      <div class="result-icon">✅</div>
+      <h2 id="resultTitle">회의록이 생성되었습니다</h2>
+      <a id="resultLink" href="#" target="_blank" class="result-link">Notion에서 열기 →</a>
+      <button class="ghost-btn" id="newBtn" type="button">새 회의 녹음</button>
+    </section>
+
+    <section class="processing hidden" id="processing">
+      <div class="spinner"></div>
+      <div class="processing-text" id="processingText">처리 중...</div>
+      <div class="processing-sub">전사 → 요약 → Notion 저장</div>
+    </section>
+
+    <section class="error hidden" id="error">
+      <div class="error-icon">⚠️</div>
+      <div class="error-text" id="errorText"></div>
+      <button class="ghost-btn" id="retryBtn" type="button">다시 시도</button>
+    </section>
+
+    <footer class="app-footer">
+      <div class="hint" id="hint">시작 버튼을 누르면 마이크 권한을 요청합니다</div>
+    </footer>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
