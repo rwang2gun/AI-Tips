@@ -36,7 +36,14 @@ AI-Tips/
   ✅ 생성된 Notion 페이지 링크 표시
 ```
 
-## 🚀 Vercel 배포 가이드
+## 🚀 처음 배포하시나요?
+
+**[👉 SETUP.md — 처음부터 끝까지 체크리스트](./SETUP.md)** 를 따라가세요.  
+Gemini API 키 발급 → Notion Integration 생성 → Vercel 배포 → 모바일 PWA 설치까지 9단계로 정리되어 있습니다.
+
+---
+
+## 🚀 Vercel 배포 가이드 (요약)
 
 ### 1. GitHub에 푸시
 ```bash
