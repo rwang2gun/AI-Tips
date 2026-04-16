@@ -3,15 +3,25 @@
 // ============================================================
 //
 // [흐름]
-//   클라이언트(meeting-notes/app.js)에서 두 단계로 호출:
+//   클라이언트(meeting-notes/app.js)에서 네 단계로 호출:
 //   1. upload-chunk (X-Action 헤더)
 //      → 오디오 청크(3.5MB 이하)를 Vercel Blob에 임시 저장
 //      → 1시간 녹음 ≈ 14MB → 4청크로 분할 업로드
-//   2. process (X-Action 헤더)
+//   2. prepare (X-Action 헤더)
 //      → 모든 청크 결합 → Gemini Files API 업로드
+//      → 파일 URI 반환 (ACTIVE 대기는 클라이언트에서 폴링)
+//   3. check-file (X-Action 헤더)
+//      → Gemini 파일 처리 상태 확인 (클라이언트가 주기적 호출)
+//   4. finalize (X-Action 헤더)
 //      → Gemini 2.5 Flash로 한국어 전사 + 구조화 JSON 추출
 //      → Notion API로 "자동 회의록 DB"에 페이지 생성
 //      → Vercel Blob 청크 정리
+//
+// [단계 분할 이유]
+//   Vercel Hobby 함수는 60초 실행 한도. 70분짜리 회의는 결합+업로드+폴링+
+//   Gemini 생성+Notion 생성을 한 호출에 담으면 FUNCTION_INVOCATION_TIMEOUT.
+//   prepare(결합+업로드) · check-file(폴링) · finalize(생성+Notion)로 쪼개면
+//   각 호출이 60초 안에 안전하게 끝남.
 //
 // [핵심 설계 결정]
 //   - 청크 3.5MB 분할: Vercel Hobby 4.5MB 본문 한도 때문
@@ -88,8 +98,14 @@ export default async function handler(req, res) {
     if (action === 'upload-chunk') {
       return await handleUploadChunk(req, res);
     }
-    if (action === 'process') {
-      return await handleProcess(req, res);
+    if (action === 'prepare') {
+      return await handlePrepare(req, res);
+    }
+    if (action === 'check-file') {
+      return await handleCheckFile(req, res);
+    }
+    if (action === 'finalize') {
+      return await handleFinalize(req, res);
     }
     return jsonResponse(res, 400, { error: 'Unknown X-Action' });
   } catch (err) {
@@ -129,17 +145,17 @@ async function handleUploadChunk(req, res) {
   return jsonResponse(res, 200, { ok: true, chunkIndex: Number(chunkIndex) });
 }
 
-// ------- 전사 + 요약 + Notion 생성 -------
+// ------- 1단계: 청크 결합 + Gemini Files API 업로드 -------
 
-async function handleProcess(req, res) {
+async function handlePrepare(req, res) {
   const body = await readJsonBody(req);
-  const { sessionId, title, meetingType, mimeType, durationSec } = body;
+  const { sessionId, mimeType } = body;
 
   if (!sessionId || !/^[0-9a-f-]{36}$/i.test(sessionId)) {
     return jsonResponse(res, 400, { error: 'Invalid session id' });
   }
 
-  // 1. Vercel Blob에서 모든 청크 가져와 결합
+  // Vercel Blob에서 모든 청크 가져와 결합
   const prefix = `meetings/${sessionId}/`;
   const { blobs } = await list({ prefix });
   if (!blobs.length) {
@@ -156,32 +172,65 @@ async function handleProcess(req, res) {
   );
   const audioBuffer = Buffer.concat(chunkBuffers);
 
-  // 2. Gemini Files API에 업로드
+  // Gemini Files API에 업로드 — PROCESSING 상태 대기는 클라이언트에서 check-file로 폴링
   const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   const audioBlob = new Blob([audioBuffer], { type: mimeType || 'audio/webm' });
 
-  let uploaded = await genAI.files.upload({
+  const uploaded = await genAI.files.upload({
     file: audioBlob,
     config: { mimeType: mimeType || 'audio/webm' },
   });
 
-  // 처리 완료까지 폴링
-  let fileInfo = uploaded;
-  const maxWait = 50; // 최대 50초 대기
-  for (let i = 0; i < maxWait && fileInfo.state === 'PROCESSING'; i++) {
-    await new Promise((r) => setTimeout(r, 1000));
-    fileInfo = await genAI.files.get({ name: uploaded.name });
+  return jsonResponse(res, 200, {
+    ok: true,
+    fileName: uploaded.name,
+    fileUri: uploaded.uri,
+    fileMimeType: uploaded.mimeType,
+    state: uploaded.state,
+  });
+}
+
+// ------- 2단계: Gemini 파일 처리 상태 확인 (클라이언트가 폴링) -------
+
+async function handleCheckFile(req, res) {
+  const body = await readJsonBody(req);
+  const { fileName } = body;
+
+  if (!fileName || typeof fileName !== 'string' || !fileName.startsWith('files/')) {
+    return jsonResponse(res, 400, { error: 'Invalid fileName' });
   }
 
-  if (fileInfo.state !== 'ACTIVE') {
-    await cleanupChunks(prefix);
-    return jsonResponse(res, 500, { error: `Gemini file state: ${fileInfo.state}` });
+  const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const fileInfo = await genAI.files.get({ name: fileName });
+
+  return jsonResponse(res, 200, {
+    ok: true,
+    state: fileInfo.state,
+    fileUri: fileInfo.uri,
+    fileMimeType: fileInfo.mimeType,
+  });
+}
+
+// ------- 3단계: Gemini 전사/요약 + Notion 페이지 생성 -------
+
+async function handleFinalize(req, res) {
+  const body = await readJsonBody(req);
+  const { sessionId, fileUri, fileMimeType, title, meetingType, durationSec } = body;
+
+  if (!sessionId || !/^[0-9a-f-]{36}$/i.test(sessionId)) {
+    return jsonResponse(res, 400, { error: 'Invalid session id' });
+  }
+  if (!fileUri || !fileMimeType) {
+    return jsonResponse(res, 400, { error: 'Missing fileUri/fileMimeType' });
   }
 
-  // 3. Notion 용어집 조회
+  const prefix = `meetings/${sessionId}/`;
+  const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+  // Notion 용어집 조회
   const glossaryText = await fetchGlossary();
 
-  // 4. Gemini 호출 — 구조화된 JSON으로 회의록 추출
+  // Gemini 호출 — 구조화된 JSON으로 회의록 추출
   const today = new Date().toISOString().slice(0, 10);
   const meetingMeta = {
     requestedTitle: title,
@@ -213,7 +262,7 @@ ${glossaryText}
     contents: [
       createUserContent([
         promptText,
-        createPartFromUri(fileInfo.uri, fileInfo.mimeType),
+        createPartFromUri(fileUri, fileMimeType),
       ]),
     ],
     config: {
@@ -224,10 +273,10 @@ ${glossaryText}
 
   const meetingData = JSON.parse(result.text);
 
-  // 5. Notion 페이지 생성
+  // Notion 페이지 생성
   const notionUrl = await createNotionPage(meetingData, today);
 
-  // 6. 청크 정리 (Gemini 파일은 48시간 후 자동 삭제됨)
+  // 청크 정리 (Gemini 파일은 48시간 후 자동 삭제됨)
   await cleanupChunks(prefix);
 
   return jsonResponse(res, 200, {
