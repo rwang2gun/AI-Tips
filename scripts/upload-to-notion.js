@@ -211,6 +211,10 @@ async function uploadFileToNotion(fileBuffer, filename) {
 
 // ------- Notion 블록 빌더 (api/process-meeting.js와 동기화 필요) -------
 
+// 항목 호환 헬퍼: 신 schema는 {text, sourceQuote}, 구 schema는 plain string
+function itemText(x) { return typeof x === 'string' ? x : (x?.text || ''); }
+function itemQuote(x) { return typeof x === 'string' ? '' : (x?.sourceQuote || ''); }
+
 function buildBlocks(data, transcriptFileUpload = null) {
   const text = (s) => [{ type: 'text', text: { content: s } }];
   const bold = (s) => [{ type: 'text', text: { content: s }, annotations: { bold: true } }];
@@ -301,7 +305,7 @@ function buildBlocks(data, transcriptFileUpload = null) {
 
   blocks.push({ object: 'block', type: 'divider', divider: {} });
 
-  // ===== 본문: heading_2 섹션 × 4 =====
+  // ===== 본문: heading_2 섹션 × 4 (sourceQuote는 진단 토글에서만 노출) =====
 
   // 📌 아젠다
   blocks.push(heading2('📌', '아젠다'));
@@ -321,7 +325,7 @@ function buildBlocks(data, transcriptFileUpload = null) {
     for (const d of data.discussion) {
       blocks.push(heading3(d.topic));
       for (const p of d.points || []) {
-        blocks.push(bullet(text(p)));
+        blocks.push(bullet(text(itemText(p))));
       }
     }
   }
@@ -332,17 +336,17 @@ function buildBlocks(data, transcriptFileUpload = null) {
     blocks.push(bullet(text('(결정된 사항 없음)')));
   } else {
     for (const d of data.decisions) {
-      blocks.push(bullet(text(d)));
+      blocks.push(bullet(text(itemText(d))));
     }
   }
 
   // ✅ To-do
   blocks.push(heading2('✅', 'To-do'));
   const todoItems = (data.todos || []).length
-    ? data.todos.map((s) => ({
+    ? data.todos.map((t) => ({
         object: 'block',
         type: 'to_do',
-        to_do: { rich_text: text(s), checked: false },
+        to_do: { rich_text: text(itemText(t)), checked: false },
       }))
     : [{
         object: 'block',
@@ -351,12 +355,62 @@ function buildBlocks(data, transcriptFileUpload = null) {
       }];
   blocks.push(...todoItems);
 
-  // 전사 원문 파일 (있을 때만 페이지 하단에 file block 추가)
-  if (transcriptFileUpload) {
+  // ===== 진단 토글: 전사 원문 + 항목별 근거 인용 매핑 =====
+  const evidenceChildren = buildEvidenceBlocks(data, transcriptFileUpload);
+  if (evidenceChildren.length) {
     blocks.push({ object: 'block', type: 'divider', divider: {} });
     blocks.push({
       object: 'block',
-      type: 'file',
+      type: 'toggle',
+      toggle: {
+        rich_text: [{
+          type: 'text',
+          text: { content: '🔍 검토 자료 (전사 원문 + 항목별 근거 인용)' },
+          annotations: { color: 'gray' },
+        }],
+        children: evidenceChildren,
+      },
+    });
+  }
+
+  return blocks;
+}
+
+// 진단 토글 안에 들어갈 블록들: 전사 파일 + 항목별 (text — 인용/⚠️ 근거 없음)
+function buildEvidenceBlocks(data, transcriptFileUpload) {
+  const text = (s) => [{ type: 'text', text: { content: s } }];
+  const bold = (s) => [{ type: 'text', text: { content: s }, annotations: { bold: true } }];
+  const heading3 = (content) => ({
+    object: 'block', type: 'heading_3', heading_3: { rich_text: text(content) },
+  });
+
+  const evidenceBullet = (mainText, quote) => {
+    const parts = [{ type: 'text', text: { content: mainText } }];
+    if (quote && quote.trim()) {
+      const truncated = quote.length > 100 ? quote.slice(0, 100) + '…' : quote;
+      parts.push({
+        type: 'text',
+        text: { content: `  「${truncated}」` },
+        annotations: { italic: true, color: 'gray' },
+      });
+    } else {
+      parts.push({
+        type: 'text',
+        text: { content: '  ⚠️ 근거 없음 (환각/추정 의심)' },
+        annotations: { italic: true, color: 'red' },
+      });
+    }
+    return {
+      object: 'block', type: 'bulleted_list_item',
+      bulleted_list_item: { rich_text: parts },
+    };
+  };
+
+  const blocks = [];
+
+  if (transcriptFileUpload) {
+    blocks.push({
+      object: 'block', type: 'file',
       file: {
         type: 'file_upload',
         file_upload: { id: transcriptFileUpload.id },
@@ -366,6 +420,33 @@ function buildBlocks(data, transcriptFileUpload = null) {
         }],
       },
     });
+  }
+
+  if ((data.decisions || []).length) {
+    blocks.push(heading3('🎯 결정 사항 — 근거 인용'));
+    for (const d of data.decisions) {
+      blocks.push(evidenceBullet(itemText(d), itemQuote(d)));
+    }
+  }
+
+  if ((data.todos || []).length) {
+    blocks.push(heading3('✅ To-do — 근거 인용'));
+    for (const td of data.todos) {
+      blocks.push(evidenceBullet(itemText(td), itemQuote(td)));
+    }
+  }
+
+  if ((data.discussion || []).length) {
+    blocks.push(heading3('💬 논의 사항 — 근거 인용'));
+    for (const disc of data.discussion) {
+      blocks.push({
+        object: 'block', type: 'paragraph',
+        paragraph: { rich_text: bold(disc.topic) },
+      });
+      for (const p of disc.points || []) {
+        blocks.push(evidenceBullet(itemText(p), itemQuote(p)));
+      }
+    }
   }
 
   return blocks;

@@ -306,7 +306,13 @@ ${transcript}
 8. agenda: 회의 시작 시 명시적으로 다룬 안건. 없으면 빈 배열
 9. discussion: 실제 오간 논의 (가장 중요)
 10. decisions: 명확히 합의/결정된 사항만
-11. todos: 누가 무엇을 언제까지 할지 명시된 액션 아이템`;
+11. todos: 누가 무엇을 언제까지 할지 명시된 액션 아이템
+12. **항목별 근거 인용 (sourceQuote)** — 사후 검토용 근거 자료, 본문에는 표시되지 않음
+   - discussion.points / decisions / todos 각 항목에 sourceQuote 필드 작성
+   - 인용은 전사문에서 그대로 가져온 10~80자 짧은 발췌 (변형/요약 금지)
+   - 한 항목 본문이 여러 발언에 기반하면 가장 결정적인 한 문장 선택
+   - 명시적 발언 없이 추정/유추로 작성한 항목은 sourceQuote를 빈 문자열로
+     (환각 시그널이므로 정직하게 빈 문자열을 두는 것이 중요)`;
 
   // 요약은 gemini-2.5-pro 기본. Flash는 "긴 입력(100K+ chars) + structured
   // output" 조합에서 지속적 503 UNAVAILABLE 반환 (6회 지수백오프 재시도로도
@@ -640,6 +646,21 @@ async function fetchGlossary() {
 }
 
 function meetingSchema() {
+  // 항목별 "근거 인용"을 함께 받는 재사용 타입.
+  // sourceQuote가 빈 문자열이면 "명시적 발언 없음 = 환각/추정 의심" 신호로 활용.
+  const evidenced = {
+    type: 'object',
+    properties: {
+      text: { type: 'string', description: '항목 본문 (한국어)' },
+      sourceQuote: {
+        type: 'string',
+        description:
+          '이 항목의 근거가 된 전사문에서의 짧은 인용 (원문 그대로 10~80자). 명시적 발언 없이 추정/유추로 작성한 항목은 빈 문자열.',
+      },
+    },
+    required: ['text', 'sourceQuote'],
+  };
+
   return {
     type: 'object',
     properties: {
@@ -670,13 +691,13 @@ function meetingSchema() {
           type: 'object',
           properties: {
             topic: { type: 'string' },
-            points: { type: 'array', items: { type: 'string' } },
+            points: { type: 'array', items: evidenced },
           },
           required: ['topic', 'points'],
         },
       },
-      decisions: { type: 'array', items: { type: 'string' } },
-      todos: { type: 'array', items: { type: 'string' } },
+      decisions: { type: 'array', items: evidenced },
+      todos: { type: 'array', items: evidenced },
     },
     required: ['title', 'topic', 'meetingType', 'labels', 'agenda', 'discussion', 'decisions', 'todos'],
   };

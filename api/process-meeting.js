@@ -550,7 +550,13 @@ ${transcript}
 8. agenda: 회의 시작 시 명시적으로 다룬 안건. 없으면 빈 배열
 9. discussion: 실제 오간 논의 (가장 중요)
 10. decisions: 명확히 합의/결정된 사항만
-11. todos: 누가 무엇을 언제까지 할지 명시된 액션 아이템`;
+11. todos: 누가 무엇을 언제까지 할지 명시된 액션 아이템
+12. **항목별 근거 인용 (sourceQuote)** — 사후 검토용 근거 자료, 본문에는 표시되지 않음
+   - discussion.points / decisions / todos 각 항목에 sourceQuote 필드 작성
+   - 인용은 전사문에서 그대로 가져온 10~80자 짧은 발췌 (변형/요약 금지)
+   - 한 항목 본문이 여러 발언에 기반하면 가장 결정적인 한 문장 선택
+   - 명시적 발언 없이 추정/유추로 작성한 항목은 sourceQuote를 빈 문자열로
+     (환각 시그널이므로 정직하게 빈 문자열을 두는 것이 중요)`;
 
   const result = await withRetry(() =>
     genAI.models.generateContent({
@@ -615,10 +621,28 @@ async function handleFinalizeNotion(req, res) {
   const r = await fetch(resultBlob.url);
   const { meetingData, date } = await r.json();
 
-  // Notion 페이지 생성
-  const notionUrl = await createNotionPage(meetingData, date);
+  // 전사 원문을 Notion에 업로드 (실패해도 페이지 생성은 진행)
+  // Blob을 청소하기 직전에 끌어올려 진단 자료로 영구 보존.
+  let transcriptUpload = null;
+  try {
+    const transcriptKey = `meetings/${sessionId}/transcript.txt`;
+    const { blobs: txBlobs } = await list({ prefix: transcriptKey });
+    const txBlob = txBlobs.find((b) => b.pathname === transcriptKey);
+    if (txBlob) {
+      const txRes = await fetch(txBlob.url);
+      const transcriptText = await txRes.text();
+      const filename = buildTranscriptFilename(meetingData.title, date);
+      const id = await uploadTranscriptToNotion(transcriptText, filename);
+      transcriptUpload = { id, charCount: transcriptText.length };
+    }
+  } catch (e) {
+    console.warn('[transcript-upload] failed (페이지는 첨부 없이 생성):', e?.message);
+  }
 
-  // 청크 + 전사 + 결과 파일 모두 정리 (Gemini 파일은 48시간 후 자동 삭제됨)
+  // Notion 페이지 생성 (진단 토글 안에 transcript 첨부 + sourceQuote 매핑 포함)
+  const notionUrl = await createNotionPage(meetingData, date, transcriptUpload);
+
+  // 청크 + 전사 + 결과 파일 모두 정리 (전사는 이미 Notion에 첨부됐고, Gemini 파일은 48시간 후 자동 삭제)
   await cleanupChunks(prefix);
 
   return jsonResponse(res, 200, {
@@ -668,11 +692,26 @@ ${agendaTitles ? `[아젠다 제목들]\n${agendaTitles}\n` : ''}
 // ------- Gemini 응답 스키마 -------
 
 function meetingSchema() {
+  // 항목별 "근거 인용"을 함께 받는 재사용 타입.
+  // sourceQuote가 빈 문자열이면 "명시적 발언 없음 = 환각/추정 의심" 신호로 활용.
+  const evidenced = {
+    type: 'object',
+    properties: {
+      text: { type: 'string', description: '항목 본문 (한국어)' },
+      sourceQuote: {
+        type: 'string',
+        description:
+          '이 항목의 근거가 된 전사문에서의 짧은 인용 (원문 그대로 10~80자). 명시적 발언 없이 추정/유추로 작성한 항목은 빈 문자열.',
+      },
+    },
+    required: ['text', 'sourceQuote'],
+  };
+
   return {
     type: 'object',
     properties: {
       title: { type: 'string', description: '회의 제목 (30자 이내)' },
-      topic: { type: 'string', description: '회의 주제 한 문장' },
+      topic: { type: 'string', description: '회의 주제 한 줄 요약 (50자 이내). 아젠다를 나열하지 말고 핵심만 짧게.' },
       meetingType: {
         type: 'string',
         enum: ['킥오프', '내부 논의', '실무 논의', '기타'],
@@ -698,13 +737,13 @@ function meetingSchema() {
           type: 'object',
           properties: {
             topic: { type: 'string' },
-            points: { type: 'array', items: { type: 'string' } },
+            points: { type: 'array', items: evidenced },
           },
           required: ['topic', 'points'],
         },
       },
-      decisions: { type: 'array', items: { type: 'string' } },
-      todos: { type: 'array', items: { type: 'string' } },
+      decisions: { type: 'array', items: evidenced },
+      todos: { type: 'array', items: evidenced },
     },
     required: ['title', 'topic', 'meetingType', 'labels', 'agenda', 'discussion', 'decisions', 'todos'],
   };
@@ -712,7 +751,7 @@ function meetingSchema() {
 
 // ------- Notion 페이지 생성 -------
 
-async function createNotionPage(data, dateStr) {
+async function createNotionPage(data, dateStr, transcriptUpload = null) {
   const notion = new NotionClient({ auth: process.env.NOTION_TOKEN });
   const databaseId = process.env.NOTION_DATABASE_ID;
 
@@ -725,7 +764,7 @@ async function createNotionPage(data, dateStr) {
     properties['레이블'] = { multi_select: data.labels.map((name) => ({ name })) };
   }
 
-  const children = buildBlocks(data);
+  const children = buildBlocks(data, transcriptUpload);
 
   const page = await notion.pages.create({
     parent: { database_id: databaseId },
@@ -736,21 +775,40 @@ async function createNotionPage(data, dateStr) {
   return page.url;
 }
 
-// 회의록 서식 구조에 맞춰 Notion 블록 구성
-function buildBlocks(data) {
+// 항목 형태 호환 헬퍼: 신 schema는 {text, sourceQuote} 객체, 구 schema는 plain string
+function itemText(x) { return typeof x === 'string' ? x : (x?.text || ''); }
+function itemQuote(x) { return typeof x === 'string' ? '' : (x?.sourceQuote || ''); }
+
+// 회의록 서식 구조에 맞춰 Notion 블록 구성 (scripts/upload-to-notion.js와 동기화 유지)
+function buildBlocks(data, transcriptUpload = null) {
   const text = (s) => [{ type: 'text', text: { content: s } }];
   const bold = (s) => [{ type: 'text', text: { content: s }, annotations: { bold: true } }];
 
-  const bullets = (items) =>
-    items.map((s) => ({
+  const bullet = (richText, children) => {
+    const b = {
       object: 'block',
       type: 'bulleted_list_item',
-      bulleted_list_item: { rich_text: text(s) },
-    }));
+      bulleted_list_item: { rich_text: richText },
+    };
+    if (children?.length) b.bulleted_list_item.children = children;
+    return b;
+  };
+  const bullets = (items) => items.map((s) => bullet(text(s)));
+
+  const heading2 = (emoji, title) => ({
+    object: 'block',
+    type: 'heading_2',
+    heading_2: { rich_text: text(`${emoji} ${title}`) },
+  });
+  const heading3 = (content) => ({
+    object: 'block',
+    type: 'heading_3',
+    heading_3: { rich_text: text(content) },
+  });
 
   const blocks = [];
 
-  // 컬럼 레이아웃 (기본 정보 / 후속 진행 업무)
+  // ===== 메타 영역: 2단 컬럼 × 회색 콜아웃 (수동 편집 영역) =====
   blocks.push({
     object: 'block',
     type: 'column_list',
@@ -760,65 +818,45 @@ function buildBlocks(data) {
           object: 'block',
           type: 'column',
           column: {
-            children: [
-              {
-                object: 'block',
-                type: 'callout',
-                callout: {
-                  icon: { type: 'emoji', emoji: '✅' },
-                  color: 'blue_background',
-                  rich_text: bold('기본 정보'),
-                  children: [
-                    {
-                      object: 'block',
-                      type: 'bulleted_list_item',
-                      bulleted_list_item: {
-                        rich_text: [
-                          { type: 'text', text: { content: '회의 주제: ' }, annotations: { bold: true } },
-                          { type: 'text', text: { content: data.topic || '' } },
-                        ],
-                      },
-                    },
-                    {
-                      object: 'block',
-                      type: 'bulleted_list_item',
-                      bulleted_list_item: { rich_text: bold('회의 자료:') },
-                    },
-                    {
-                      object: 'block',
-                      type: 'bulleted_list_item',
-                      bulleted_list_item: { rich_text: bold('관련 일감:') },
-                    },
-                  ],
-                },
+            children: [{
+              object: 'block',
+              type: 'callout',
+              callout: {
+                icon: { type: 'emoji', emoji: '✅' },
+                color: 'gray_background',
+                rich_text: bold('기본 정보'),
+                children: [
+                  bullet([
+                    { type: 'text', text: { content: '회의 주제: ' }, annotations: { bold: true } },
+                    { type: 'text', text: { content: data.topic || '' } },
+                  ]),
+                  bullet(bold('회의 자료:')),
+                  bullet(bold('관련 일감:')),
+                ],
               },
-            ],
+            }],
           },
         },
         {
           object: 'block',
           type: 'column',
           column: {
-            children: [
-              {
-                object: 'block',
-                type: 'callout',
-                callout: {
-                  icon: { type: 'emoji', emoji: '🚩' },
-                  color: 'blue_background',
-                  rich_text: bold('후속 진행 업무'),
-                  children: [
-                    {
-                      object: 'block',
-                      type: 'bulleted_list_item',
-                      bulleted_list_item: {
-                        rich_text: [{ type: 'text', text: { content: 'Jira 일감 복사' }, annotations: { italic: true, color: 'yellow' } }],
-                      },
-                    },
-                  ],
-                },
+            children: [{
+              object: 'block',
+              type: 'callout',
+              callout: {
+                icon: { type: 'emoji', emoji: '🚩' },
+                color: 'gray_background',
+                rich_text: bold('후속 진행 업무'),
+                children: [
+                  bullet([{
+                    type: 'text',
+                    text: { content: 'Jira 일감 복사' },
+                    annotations: { italic: true, color: 'yellow' },
+                  }]),
+                ],
               },
-            ],
+            }],
           },
         },
       ],
@@ -827,104 +865,202 @@ function buildBlocks(data) {
 
   blocks.push({ object: 'block', type: 'divider', divider: {} });
 
-  // 아젠다
-  const agendaChildren = [];
-  for (const a of data.agenda || []) {
-    agendaChildren.push({
-      object: 'block',
-      type: 'bulleted_list_item',
-      bulleted_list_item: {
-        rich_text: bold(a.title),
-        children: bullets(a.items || []),
-      },
-    });
-  }
-  if (agendaChildren.length === 0) {
-    agendaChildren.push({
-      object: 'block',
-      type: 'bulleted_list_item',
-      bulleted_list_item: { rich_text: text('(명시된 아젠다 없음)') },
-    });
-  }
-  blocks.push({
-    object: 'block',
-    type: 'callout',
-    callout: {
-      icon: { type: 'emoji', emoji: '📌' },
-      color: 'blue_background',
-      rich_text: bold('아젠다'),
-      children: agendaChildren,
-    },
-  });
+  // ===== 본문: heading_2 섹션 × 4 (sourceQuote는 진단 토글에서만 노출) =====
 
-  // 논의 사항
-  const discussionChildren = [];
-  for (const d of data.discussion || []) {
-    discussionChildren.push({
-      object: 'block',
-      type: 'bulleted_list_item',
-      bulleted_list_item: {
-        rich_text: bold(d.topic),
-        children: bullets(d.points || []),
-      },
-    });
+  blocks.push(heading2('📌', '아젠다'));
+  if ((data.agenda || []).length === 0) {
+    blocks.push(bullet(text('(명시된 아젠다 없음)')));
+  } else {
+    for (const a of data.agenda) {
+      blocks.push(bullet(bold(a.title), bullets(a.items || [])));
+    }
   }
-  blocks.push({
-    object: 'block',
-    type: 'callout',
-    callout: {
-      icon: { type: 'emoji', emoji: '💬' },
-      color: 'blue_background',
-      rich_text: bold('논의 사항'),
-      children: discussionChildren.length ? discussionChildren : [{
+
+  blocks.push(heading2('💬', '논의 사항'));
+  if ((data.discussion || []).length === 0) {
+    blocks.push(bullet(text('(논의 내용 없음)')));
+  } else {
+    for (const d of data.discussion) {
+      blocks.push(heading3(d.topic));
+      for (const p of d.points || []) {
+        blocks.push(bullet(text(itemText(p))));
+      }
+    }
+  }
+
+  blocks.push(heading2('🎯', '결정 사항'));
+  if ((data.decisions || []).length === 0) {
+    blocks.push(bullet(text('(결정된 사항 없음)')));
+  } else {
+    for (const d of data.decisions) {
+      blocks.push(bullet(text(itemText(d))));
+    }
+  }
+
+  blocks.push(heading2('✅', 'To-do'));
+  const todoItems = (data.todos || []).length
+    ? data.todos.map((t) => ({
         object: 'block',
-        type: 'bulleted_list_item',
-        bulleted_list_item: { rich_text: text('(논의 내용 없음)') },
-      }],
-    },
-  });
+        type: 'to_do',
+        to_do: { rich_text: text(itemText(t)), checked: false },
+      }))
+    : [{
+        object: 'block',
+        type: 'to_do',
+        to_do: { rich_text: text(''), checked: false },
+      }];
+  blocks.push(...todoItems);
 
-  // 결정 사항
-  blocks.push({
-    object: 'block',
-    type: 'callout',
-    callout: {
-      icon: { type: 'emoji', emoji: '🎯' },
-      color: 'blue_background',
-      rich_text: bold('결정 사항'),
-      children: (data.decisions || []).length
-        ? bullets(data.decisions)
-        : [{
-            object: 'block',
-            type: 'bulleted_list_item',
-            bulleted_list_item: { rich_text: text('(결정된 사항 없음)') },
-          }],
-    },
-  });
-
-  // To-do
-  blocks.push({
-    object: 'block',
-    type: 'callout',
-    callout: {
-      icon: { type: 'emoji', emoji: '✅' },
-      color: 'blue_background',
-      rich_text: bold('To-do'),
-      children: (data.todos || []).length
-        ? data.todos.map((s) => ({
-            object: 'block',
-            type: 'to_do',
-            to_do: { rich_text: text(s), checked: false },
-          }))
-        : [{
-            object: 'block',
-            type: 'to_do',
-            to_do: { rich_text: text(''), checked: false },
-          }],
-    },
-  });
+  // ===== 진단 토글: 전사 원문 + 항목별 근거 인용 매핑 =====
+  const evidenceChildren = buildEvidenceBlocks(data, transcriptUpload);
+  if (evidenceChildren.length) {
+    blocks.push({ object: 'block', type: 'divider', divider: {} });
+    blocks.push({
+      object: 'block',
+      type: 'toggle',
+      toggle: {
+        rich_text: [{
+          type: 'text',
+          text: { content: '🔍 검토 자료 (전사 원문 + 항목별 근거 인용)' },
+          annotations: { color: 'gray' },
+        }],
+        children: evidenceChildren,
+      },
+    });
+  }
 
   return blocks;
+}
+
+// 진단 토글 안에 들어갈 블록들: 전사 파일 + 항목별 (text — 인용/⚠️ 근거 없음)
+function buildEvidenceBlocks(data, transcriptUpload) {
+  const text = (s) => [{ type: 'text', text: { content: s } }];
+  const bold = (s) => [{ type: 'text', text: { content: s }, annotations: { bold: true } }];
+  const heading3 = (content) => ({
+    object: 'block', type: 'heading_3', heading_3: { rich_text: text(content) },
+  });
+
+  // 본문 텍스트 + sourceQuote(있으면 회색 이탤릭, 없으면 빨간 ⚠️)를 한 줄에 묶음
+  const evidenceBullet = (mainText, quote) => {
+    const parts = [{ type: 'text', text: { content: mainText } }];
+    if (quote && quote.trim()) {
+      const truncated = quote.length > 100 ? quote.slice(0, 100) + '…' : quote;
+      parts.push({
+        type: 'text',
+        text: { content: `  「${truncated}」` },
+        annotations: { italic: true, color: 'gray' },
+      });
+    } else {
+      parts.push({
+        type: 'text',
+        text: { content: '  ⚠️ 근거 없음 (환각/추정 의심)' },
+        annotations: { italic: true, color: 'red' },
+      });
+    }
+    return {
+      object: 'block', type: 'bulleted_list_item',
+      bulleted_list_item: { rich_text: parts },
+    };
+  };
+
+  const blocks = [];
+
+  if (transcriptUpload) {
+    blocks.push({
+      object: 'block', type: 'file',
+      file: {
+        type: 'file_upload',
+        file_upload: { id: transcriptUpload.id },
+        caption: [{
+          type: 'text',
+          text: { content: `회의 전사 원문 (${transcriptUpload.charCount.toLocaleString()}자)` },
+        }],
+      },
+    });
+  }
+
+  if ((data.decisions || []).length) {
+    blocks.push(heading3('🎯 결정 사항 — 근거 인용'));
+    for (const d of data.decisions) {
+      blocks.push(evidenceBullet(itemText(d), itemQuote(d)));
+    }
+  }
+
+  if ((data.todos || []).length) {
+    blocks.push(heading3('✅ To-do — 근거 인용'));
+    for (const td of data.todos) {
+      blocks.push(evidenceBullet(itemText(td), itemQuote(td)));
+    }
+  }
+
+  if ((data.discussion || []).length) {
+    blocks.push(heading3('💬 논의 사항 — 근거 인용'));
+    for (const disc of data.discussion) {
+      blocks.push({
+        object: 'block', type: 'paragraph',
+        paragraph: { rich_text: bold(disc.topic) },
+      });
+      for (const p of disc.points || []) {
+        blocks.push(evidenceBullet(itemText(p), itemQuote(p)));
+      }
+    }
+  }
+
+  return blocks;
+}
+
+// 전사 원문 파일명 (upload-to-notion.js와 동일 로직)
+function buildTranscriptFilename(title, date) {
+  const safe = (title || 'untitled')
+    .replace(/[\\/:*?"<>|]/g, '')
+    .replace(/\s+/g, '_')
+    .slice(0, 80);
+  return `전사원문_${date}_${safe}.txt`;
+}
+
+// Notion File Upload API (single_part). transcriptText를 업로드 후 file_upload id 반환.
+// 실패 시 throw — handleFinalizeNotion이 catch해서 첨부 없이 진행함.
+async function uploadTranscriptToNotion(transcriptText, filename) {
+  const NOTION_VERSION = '2022-06-28';
+  const token = process.env.NOTION_TOKEN;
+
+  const createResp = await fetch('https://api.notion.com/v1/file_uploads', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Notion-Version': NOTION_VERSION,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      mode: 'single_part',
+      filename,
+      content_type: 'text/plain',
+    }),
+  });
+  if (!createResp.ok) {
+    const errText = await createResp.text();
+    throw new Error(`file_upload create failed (HTTP ${createResp.status}): ${errText.slice(0, 300)}`);
+  }
+  const createData = await createResp.json();
+
+  const form = new FormData();
+  form.append('file', new Blob([transcriptText], { type: 'text/plain;charset=utf-8' }), filename);
+
+  const sendUrl = createData.upload_url || `https://api.notion.com/v1/file_uploads/${createData.id}/send`;
+  const sendResp = await fetch(sendUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Notion-Version': NOTION_VERSION,
+    },
+    body: form,
+  });
+  if (!sendResp.ok) {
+    const errText = await sendResp.text();
+    throw new Error(`file_upload send failed (HTTP ${sendResp.status}): ${errText.slice(0, 300)}`);
+  }
+
+  return createData.id;
 }
 
 // ------- 용어집 조회 -------
