@@ -2,39 +2,39 @@
 // 회의록 자동 생성 — 서버리스 함수
 // ============================================================
 //
-// [흐름]
-//   클라이언트(meeting-notes/app.js)에서 여섯 단계로 호출:
-//   1. upload-chunk (X-Action 헤더)
-//      → 오디오 청크(3.5MB 이하)를 Vercel Blob에 임시 저장
-//      → 1시간 녹음 ≈ 14MB → 4청크로 분할 업로드
-//   2. prepare (X-Action 헤더)
-//      → 모든 청크 결합 → Gemini Files API 업로드
-//      → 파일 URI 반환 (ACTIVE 대기는 클라이언트에서 폴링)
-//   3. check-file (X-Action 헤더)
-//      → Gemini 파일 처리 상태 확인 (클라이언트가 주기적 호출)
-//   4. transcribe (X-Action 헤더)
-//      → Gemini 2.5 Flash로 한국어 전사문 생성
-//      → transcript.txt로 Vercel Blob에 저장
-//   5. summarize (X-Action 헤더)
-//      → 전사문 읽어 Gemini에 보내 구조화 JSON 추출
-//      → result.json으로 Blob에 저장
-//   6. finalize-notion (X-Action 헤더)
-//      → result.json 읽어 Notion 페이지 생성
-//      → Blob 세션 폴더 전체 정리
+// [흐름 — segment 기반 파이프라인]
+//   클라이언트(meeting-notes/app.js)가 5분 단위로 녹음을 분할하여
+//   segment 하나당 독립 webm 파일을 만들고 다음 액션들을 호출:
 //
-// [단계 분할 이유]
-//   Vercel Hobby 함수는 60초 실행 한도. 긴 회의는 단일 Gemini 호출
-//   (오디오→JSON)이 50~60초 이상 소요되어 FUNCTION_INVOCATION_TIMEOUT.
-//   전사 단계(오디오→텍스트)와 요약 단계(텍스트→JSON)로 분리하면
-//   각 Gemini 호출이 짧아져 타임아웃 회피 + 전사본이 중간 산출물로 남아
-//   요약 실패 시 재전사 불필요.
+//   세그먼트별 (S = 세그먼트 인덱스):
+//     1. upload-chunk         (X-Segment-Index: S)
+//        → 세그먼트 S의 오디오 청크(3.5MB 이하)를
+//          meetings/<sid>/seg-NN/chunk-NNNN.bin 로 저장
+//     2. prepare-segment      ({ sessionId, segmentIndex: S, mimeType })
+//        → 세그먼트 S의 청크 결합 → Gemini Files API 업로드
+//        → 파일 URI 반환 (ACTIVE 대기는 클라이언트에서 폴링)
+//     3. check-file           (Gemini 파일 ACTIVE 상태 폴링)
+//     4. transcribe-segment   ({ sessionId, segmentIndex: S, fileUri, ... })
+//        → 세그먼트 S 한국어 전사 → meetings/<sid>/transcript-NN.txt
 //
-// [한계]
-//   단일 transcribe 호출은 오디오 ~30분까지 60초 안에 처리 가능.
-//   더 긴 회의는 녹음 단계에서 MediaRecorder를 10분 세션으로 나눠
-//   독립 오디오 파일 여러 개로 저장해야 함 (RECOVERY-PLAN.md Step 4 참고).
+//   모든 세그먼트 처리 후:
+//     5. merge-transcripts    ({ sessionId, totalSegments })
+//        → transcript-NN.txt 전체를 시간순 정렬·결합 → transcript.txt
+//     6. summarize            (전사문 → 구조화 JSON → result.json)
+//     7. finalize-notion      (Notion 페이지 생성 + 세션 폴더 정리)
+//
+// [세그먼트 분할 이유]
+//   Vercel Hobby 함수 60초 한도 내에서 긴 회의를 처리하려면 단일 Gemini
+//   호출의 입력 오디오 길이를 짧게 유지해야 함. 30분 이상 단일 오디오는
+//   transcribe 호출이 60초 초과 + Flash가 긴 단일 오디오에서 generation
+//   loop(같은 문장 반복) 일으킴. 5분이 실전 안정 기준치.
 //   ※ Gemini Files API의 videoMetadata.startOffset/endOffset은 audio에
-//      적용 안 됨 (video 전용) — silently ignored.
+//     silently ignored — 서버단 가상 분할 불가, 클라이언트단 실제 분할 필요.
+//
+// [legacy 액션]
+//   prepare / transcribe (단일 파일 처리)는 meeting-notes/recover.html의
+//   기존 실패 세션(seg-NN 폴더 없는 경우) 복구용으로 보존. 신규 녹음은
+//   항상 segment 경로를 사용함.
 //
 // [핵심 설계 결정]
 //   - 청크 3.5MB 분할: Vercel Hobby 4.5MB 본문 한도 때문
@@ -98,6 +98,29 @@ function jsonResponse(res, status, body) {
   res.send(JSON.stringify(body));
 }
 
+// Gemini 503/429/일시적 거절을 지수 백오프로 재시도.
+// Vercel 60초 한도 안에 끝나도록 maxAttempts/maxDelay 보수적으로 설정.
+async function withRetry(fn, { maxAttempts = 3, baseDelayMs = 2000, maxDelayMs = 8000 } = {}) {
+  let lastErr;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const status = err?.status || err?.response?.status;
+      const msg = err?.message || '';
+      const retriable =
+        status === 429 || status === 500 || status === 503 ||
+        /overloaded|UNAVAILABLE|RESOURCE_EXHAUSTED|503|429/i.test(msg);
+      if (!retriable || attempt === maxAttempts) throw err;
+      const delay = Math.min(baseDelayMs * 2 ** (attempt - 1), maxDelayMs);
+      console.warn(`[withRetry] attempt ${attempt}/${maxAttempts} failed (${status || 'unknown'}): ${msg.slice(0, 120)}; retrying in ${delay}ms`);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw lastErr;
+}
+
 // ------- 메인 핸들러 -------
 
 export default async function handler(req, res) {
@@ -111,20 +134,30 @@ export default async function handler(req, res) {
     if (action === 'upload-chunk') {
       return await handleUploadChunk(req, res);
     }
-    if (action === 'prepare') {
-      return await handlePrepare(req, res);
+    if (action === 'prepare-segment') {
+      return await handlePrepareSegment(req, res);
+    }
+    if (action === 'transcribe-segment') {
+      return await handleTranscribeSegment(req, res);
+    }
+    if (action === 'merge-transcripts') {
+      return await handleMergeTranscripts(req, res);
     }
     if (action === 'check-file') {
       return await handleCheckFile(req, res);
-    }
-    if (action === 'transcribe') {
-      return await handleTranscribe(req, res);
     }
     if (action === 'summarize') {
       return await handleSummarize(req, res);
     }
     if (action === 'finalize-notion') {
       return await handleFinalizeNotion(req, res);
+    }
+    // legacy — recover.html에서 단일 파일 세션 복구 시 사용
+    if (action === 'prepare') {
+      return await handlePrepare(req, res);
+    }
+    if (action === 'transcribe') {
+      return await handleTranscribe(req, res);
     }
     return jsonResponse(res, 400, { error: 'Unknown X-Action' });
   } catch (err) {
@@ -142,6 +175,7 @@ async function handleUploadChunk(req, res) {
   const sessionId = req.headers['x-session-id'];
   const chunkIndex = req.headers['x-chunk-index'];
   const totalChunks = req.headers['x-total-chunks'];
+  const segmentIndex = req.headers['x-segment-index']; // 신규: segment 단위. 없으면 legacy 경로
 
   if (!sessionId || chunkIndex == null || !totalChunks) {
     return jsonResponse(res, 400, { error: 'Missing session/chunk headers' });
@@ -152,9 +186,18 @@ async function handleUploadChunk(req, res) {
     return jsonResponse(res, 400, { error: 'Invalid session id' });
   }
 
-  const buffer = await readRawBody(req);
-  const key = `meetings/${sessionId}/chunk-${String(chunkIndex).padStart(4, '0')}.bin`;
+  let key;
+  if (segmentIndex != null) {
+    const segNum = Number(segmentIndex);
+    if (!Number.isInteger(segNum) || segNum < 0 || segNum > 999) {
+      return jsonResponse(res, 400, { error: 'Invalid segment index' });
+    }
+    key = `meetings/${sessionId}/seg-${String(segNum).padStart(2, '0')}/chunk-${String(chunkIndex).padStart(4, '0')}.bin`;
+  } else {
+    key = `meetings/${sessionId}/chunk-${String(chunkIndex).padStart(4, '0')}.bin`;
+  }
 
+  const buffer = await readRawBody(req);
   await put(key, buffer, {
     access: 'public', // Vercel Blob 정책상 필요. 키가 추측 불가능한 UUID라 사실상 비공개
     addRandomSuffix: false,
@@ -284,6 +327,173 @@ async function handleTranscribe(req, res) {
   });
 }
 
+// ------- segment 단계 1: 한 세그먼트 청크 결합 + Gemini Files API 업로드 -------
+
+async function handlePrepareSegment(req, res) {
+  const body = await readJsonBody(req);
+  const { sessionId, segmentIndex, mimeType } = body;
+
+  if (!sessionId || !/^[0-9a-f-]{36}$/i.test(sessionId)) {
+    return jsonResponse(res, 400, { error: 'Invalid session id' });
+  }
+  if (!Number.isInteger(segmentIndex) || segmentIndex < 0 || segmentIndex > 999) {
+    return jsonResponse(res, 400, { error: 'Invalid segment index' });
+  }
+
+  const segPrefix = `meetings/${sessionId}/seg-${String(segmentIndex).padStart(2, '0')}/`;
+  const { blobs } = await list({ prefix: segPrefix });
+  if (!blobs.length) {
+    return jsonResponse(res, 400, { error: `No chunks found for segment ${segmentIndex}` });
+  }
+  blobs.sort((a, b) => a.pathname.localeCompare(b.pathname));
+
+  const chunkBuffers = await Promise.all(
+    blobs.map(async (b) => {
+      const r = await fetch(b.url);
+      return Buffer.from(await r.arrayBuffer());
+    })
+  );
+  const audioBuffer = Buffer.concat(chunkBuffers);
+
+  const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const audioBlob = new Blob([audioBuffer], { type: mimeType || 'audio/webm' });
+  const uploaded = await withRetry(() =>
+    genAI.files.upload({
+      file: audioBlob,
+      config: { mimeType: mimeType || 'audio/webm' },
+    })
+  );
+
+  return jsonResponse(res, 200, {
+    ok: true,
+    segmentIndex,
+    fileName: uploaded.name,
+    fileUri: uploaded.uri,
+    fileMimeType: uploaded.mimeType,
+    state: uploaded.state,
+  });
+}
+
+// ------- segment 단계 2: 한 세그먼트 전사 → transcript-NN.txt -------
+
+async function handleTranscribeSegment(req, res) {
+  const body = await readJsonBody(req);
+  const { sessionId, segmentIndex, fileUri, fileMimeType, totalSegments } = body;
+
+  if (!sessionId || !/^[0-9a-f-]{36}$/i.test(sessionId)) {
+    return jsonResponse(res, 400, { error: 'Invalid session id' });
+  }
+  if (!Number.isInteger(segmentIndex) || segmentIndex < 0 || segmentIndex > 999) {
+    return jsonResponse(res, 400, { error: 'Invalid segment index' });
+  }
+  if (!fileUri || !fileMimeType) {
+    return jsonResponse(res, 400, { error: 'Missing fileUri/fileMimeType' });
+  }
+
+  const part = totalSegments
+    ? `이 오디오는 전체 회의 중 ${segmentIndex + 1}/${totalSegments} 번째 5분 구간입니다.`
+    : `이 오디오는 전체 회의의 한 구간입니다.`;
+
+  const promptText = `${part} 앞뒤 구간은 별도로 처리되니 이 구간만 정확히 한국어로 전사하세요.
+
+[규칙]
+1. 들리는 내용을 누락 없이 옮겨 쓸 것
+2. 발언자 구분은 하지 말고 발언 순서대로 작성
+3. "음", "어" 같은 군더더기는 생략하되 실제 의미 있는 말은 모두 포함
+4. 잘 안 들리는 구간은 [불분명] 으로 표시
+5. 문장 단위로 줄바꿈하여 가독성 확보
+6. 해설이나 요약 없이 들은 말만 옮겨 쓸 것
+7. 구간 시작/끝에 별도 표시(타임스탬프 등) 추가하지 말 것 — 본문만 출력`;
+
+  const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const result = await withRetry(() =>
+    genAI.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [
+        createUserContent([
+          promptText,
+          createPartFromUri(fileUri, fileMimeType),
+        ]),
+      ],
+      // thinking OFF — Flash가 단순 전사에서 thinking에 출력 토큰 소비 후 MAX_TOKENS로 빈 응답 반환하는 이슈 회피 (PR #8 참고)
+      config: {
+        maxOutputTokens: 65536,
+        thinkingConfig: { thinkingBudget: 0 },
+      },
+    })
+  );
+
+  const transcript = result.text || '';
+  if (!transcript.trim()) {
+    return jsonResponse(res, 500, { error: `Empty transcript for segment ${segmentIndex}` });
+  }
+
+  const key = `meetings/${sessionId}/transcript-${String(segmentIndex).padStart(2, '0')}.txt`;
+  await put(key, transcript, {
+    access: 'public',
+    contentType: 'text/plain; charset=utf-8',
+    addRandomSuffix: false,
+    allowOverwrite: true,
+  });
+
+  return jsonResponse(res, 200, {
+    ok: true,
+    segmentIndex,
+    transcriptLength: transcript.length,
+  });
+}
+
+// ------- segment 단계 3: transcript-NN.txt 전체 결합 → transcript.txt -------
+
+async function handleMergeTranscripts(req, res) {
+  const body = await readJsonBody(req);
+  const { sessionId, totalSegments } = body;
+
+  if (!sessionId || !/^[0-9a-f-]{36}$/i.test(sessionId)) {
+    return jsonResponse(res, 400, { error: 'Invalid session id' });
+  }
+
+  const prefix = `meetings/${sessionId}/transcript-`;
+  const { blobs } = await list({ prefix });
+  const segmentBlobs = blobs
+    .filter((b) => /\/transcript-\d{2}\.txt$/.test(b.pathname))
+    .sort((a, b) => a.pathname.localeCompare(b.pathname));
+
+  if (!segmentBlobs.length) {
+    return jsonResponse(res, 400, { error: 'No segment transcripts found' });
+  }
+  if (totalSegments && segmentBlobs.length !== totalSegments) {
+    return jsonResponse(res, 400, {
+      error: `Segment count mismatch: expected ${totalSegments}, got ${segmentBlobs.length}`,
+    });
+  }
+
+  const SEGMENT_MINUTES = 5;
+  const parts = await Promise.all(
+    segmentBlobs.map(async (b, i) => {
+      const r = await fetch(b.url);
+      const text = (await r.text()).trim();
+      const startMin = i * SEGMENT_MINUTES;
+      const endMin = startMin + SEGMENT_MINUTES;
+      return `--- [${startMin}:00 ~ ${endMin}:00] ---\n${text}`;
+    })
+  );
+  const merged = parts.join('\n\n');
+
+  await put(`meetings/${sessionId}/transcript.txt`, merged, {
+    access: 'public',
+    contentType: 'text/plain; charset=utf-8',
+    addRandomSuffix: false,
+    allowOverwrite: true,
+  });
+
+  return jsonResponse(res, 200, {
+    ok: true,
+    segmentCount: segmentBlobs.length,
+    transcriptLength: merged.length,
+  });
+}
+
 // ------- 4단계: 전사문 → 구조화 JSON 요약 -------
 
 async function handleSummarize(req, res) {
@@ -342,14 +552,16 @@ ${transcript}
 10. decisions: 명확히 합의/결정된 사항만
 11. todos: 누가 무엇을 언제까지 할지 명시된 액션 아이템`;
 
-  const result = await genAI.models.generateContent({
-    model: 'gemini-2.5-flash',
-    contents: [createUserContent([promptText])],
-    config: {
-      responseMimeType: 'application/json',
-      responseSchema: meetingSchema(),
-    },
-  });
+  const result = await withRetry(() =>
+    genAI.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [createUserContent([promptText])],
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: meetingSchema(),
+      },
+    })
+  );
 
   const meetingData = JSON.parse(result.text);
 
