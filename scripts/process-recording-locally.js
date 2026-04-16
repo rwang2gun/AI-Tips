@@ -273,6 +273,9 @@ if (existsSync(resultPath) && !flags.has('--force-resummarize')) {
   const glossaryText = await fetchGlossary();
   console.log(`      Glossary terms: ${glossaryText ? glossaryText.split('\n').filter((l) => l.startsWith('- ')).length : 0}`);
 
+  const guideText = await fetchGuide();
+  console.log(`      Guide loaded: ${guideText ? `${guideText.length} chars` : 'none'}`);
+
   console.log('      Generating structured summary...');
   const today = new Date().toISOString().slice(0, 10);
   const meetingMeta = {
@@ -287,11 +290,12 @@ if (existsSync(resultPath) && !flags.has('--force-resummarize')) {
 
 [메타 정보]
 ${JSON.stringify(meetingMeta, null, 2)}
-${glossaryText}${summarizeSynonymHint}
+${glossaryText}${summarizeSynonymHint}${guideText}
 [전사문]
 ${transcript}
 
 [작성 규칙]
+0. 위 [회의록 작성 가이드] 섹션이 있으면 이 규칙보다 우선합니다.
 1. 모든 응답은 한국어로 작성
 2. 발언자 구분은 하지 않고 내용 중심으로 정리
 3. 게임 기획 관련 회의일 가능성이 높음 (전투, 시스템, 밸런스, UI 등의 용어 자주 등장)
@@ -483,6 +487,68 @@ function enforceSentenceBreaks(text) {
     .join('\n');
 }
 
+// 회의록 작성 가이드 페이지를 Notion에서 로드하여 평문으로 변환.
+// 사용자가 Notion에서 페이지만 수정하면 다음 회의록부터 자동 반영됨.
+// 실패 시 빈 문자열 반환 (요약 중단하지 않음).
+async function fetchGuide() {
+  const pageId = process.env.NOTION_GUIDE_PAGE_ID;
+  if (!pageId || !process.env.NOTION_TOKEN) return '';
+
+  try {
+    const notion = new NotionClient({ auth: process.env.NOTION_TOKEN });
+    const lines = await renderPageBlocks(notion, pageId);
+    const body = lines.join('\n').trim();
+    if (!body) return '';
+    return `\n[회의록 작성 가이드]\n${body}\n`;
+  } catch (e) {
+    console.warn(`      [fetchGuide] failed: ${e?.message}`);
+    return '';
+  }
+}
+
+// Notion 페이지 children을 markdown-like 평문으로 렌더.
+// 테이블은 파이프 구분 문자열로, 나머지 주요 블록 타입만 지원.
+async function renderPageBlocks(notion, blockId) {
+  const res = await notion.blocks.children.list({ block_id: blockId, page_size: 100 });
+  const getText = (rt) => (rt || []).map((t) => t.plain_text).join('');
+  const lines = [];
+
+  for (const b of res.results) {
+    switch (b.type) {
+      case 'heading_1': lines.push(`# ${getText(b.heading_1.rich_text)}`); break;
+      case 'heading_2': lines.push(`## ${getText(b.heading_2.rich_text)}`); break;
+      case 'heading_3': lines.push(`### ${getText(b.heading_3.rich_text)}`); break;
+      case 'paragraph': {
+        const t = getText(b.paragraph.rich_text);
+        lines.push(t); // 빈 줄도 유지 (섹션 간격)
+        break;
+      }
+      case 'bulleted_list_item': lines.push(`- ${getText(b.bulleted_list_item.rich_text)}`); break;
+      case 'numbered_list_item': lines.push(`1. ${getText(b.numbered_list_item.rich_text)}`); break;
+      case 'quote': lines.push(`> ${getText(b.quote.rich_text)}`); break;
+      case 'divider': lines.push('---'); break;
+      case 'callout': {
+        const icon = b.callout.icon?.emoji || '💡';
+        lines.push(`${icon} ${getText(b.callout.rich_text)}`);
+        break;
+      }
+      case 'table': {
+        if (b.has_children) {
+          const rows = await notion.blocks.children.list({ block_id: b.id, page_size: 100 });
+          for (const row of rows.results) {
+            if (row.type !== 'table_row') continue;
+            const cells = row.table_row.cells.map((cell) => getText(cell));
+            lines.push(`| ${cells.join(' | ')} |`);
+          }
+        }
+        break;
+      }
+      // 기타 블록은 조용히 스킵
+    }
+  }
+  return lines;
+}
+
 async function fetchGlossary() {
   const glossaryDbId = process.env.NOTION_GLOSSARY_DB_ID;
   if (!glossaryDbId || !process.env.NOTION_TOKEN) return '';
@@ -520,7 +586,7 @@ function meetingSchema() {
     type: 'object',
     properties: {
       title: { type: 'string', description: '회의 제목 (30자 이내)' },
-      topic: { type: 'string', description: '회의 주제 한 문장' },
+      topic: { type: 'string', description: '회의 주제 한 줄 요약 (50자 이내). 아젠다를 나열하지 말고 핵심만 짧게.' },
       meetingType: {
         type: 'string',
         enum: ['킥오프', '내부 논의', '실무 논의', '기타'],

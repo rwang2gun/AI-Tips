@@ -46,6 +46,45 @@ async function fetchGlossary() {
   return `\n[용어집 — 아래 용어가 전사문에 있으면 정확한 표기를 사용하세요]\n${terms.join('\n')}\n`;
 }
 
+async function fetchGuide() {
+  const pageId = process.env.NOTION_GUIDE_PAGE_ID;
+  if (!pageId || !process.env.NOTION_TOKEN) return '';
+  const notion = new NotionClient({ auth: process.env.NOTION_TOKEN });
+  try {
+    const res = await notion.blocks.children.list({ block_id: pageId, page_size: 100 });
+    const getText = (rt) => (rt || []).map((t) => t.plain_text).join('');
+    const lines = [];
+    for (const b of res.results) {
+      switch (b.type) {
+        case 'heading_1': lines.push(`# ${getText(b.heading_1.rich_text)}`); break;
+        case 'heading_2': lines.push(`## ${getText(b.heading_2.rich_text)}`); break;
+        case 'heading_3': lines.push(`### ${getText(b.heading_3.rich_text)}`); break;
+        case 'paragraph': lines.push(getText(b.paragraph.rich_text)); break;
+        case 'bulleted_list_item': lines.push(`- ${getText(b.bulleted_list_item.rich_text)}`); break;
+        case 'numbered_list_item': lines.push(`1. ${getText(b.numbered_list_item.rich_text)}`); break;
+        case 'quote': lines.push(`> ${getText(b.quote.rich_text)}`); break;
+        case 'divider': lines.push('---'); break;
+        case 'callout': lines.push(`${b.callout.icon?.emoji || '💡'} ${getText(b.callout.rich_text)}`); break;
+        case 'table': {
+          if (b.has_children) {
+            const rows = await notion.blocks.children.list({ block_id: b.id, page_size: 100 });
+            for (const row of rows.results) {
+              if (row.type !== 'table_row') continue;
+              const cells = row.table_row.cells.map((c) => getText(c));
+              lines.push(`| ${cells.join(' | ')} |`);
+            }
+          }
+          break;
+        }
+      }
+    }
+    const body = lines.join('\n').trim();
+    return body ? `\n[회의록 작성 가이드]\n${body}\n` : '';
+  } catch {
+    return '';
+  }
+}
+
 async function fetchSynonyms() {
   const id = process.env.NOTION_SYNONYM_DB_ID;
   if (!id || !process.env.NOTION_TOKEN) return [];
@@ -95,6 +134,7 @@ function buildSummarizeSynonymHint(synonyms) {
 const glossaryText = await fetchGlossary();
 const synonyms = await fetchSynonyms();
 const summarizeSynonymHint = buildSummarizeSynonymHint(synonyms);
+const guideText = await fetchGuide();
 
 const today = new Date().toISOString().slice(0, 10);
 const meetingMeta = {
@@ -108,11 +148,12 @@ const prompt = `당신은 게임 기획 회의록 정리 전문가입니다. 아
 
 [메타 정보]
 ${JSON.stringify(meetingMeta, null, 2)}
-${glossaryText}${summarizeSynonymHint}
+${glossaryText}${summarizeSynonymHint}${guideText}
 [전사문]
 ${transcript}
 
 [작성 규칙]
+0. 위 [회의록 작성 가이드] 섹션이 있으면 이 규칙보다 우선합니다.
 1. 모든 응답은 한국어로 작성
 2. 발언자 구분은 하지 않고 내용 중심으로 정리
 3. 게임 기획 관련 회의일 가능성이 높음 (전투, 시스템, 밸런스, UI 등의 용어 자주 등장)
@@ -143,4 +184,5 @@ console.log('━'.repeat(72));
 console.log('');
 console.log(`용어집 항목: ${glossaryText ? glossaryText.split('\n').filter((l) => l.startsWith('- ')).length : 0}개`);
 console.log(`유의어 사전: ${synonyms.length}개 (무조건=${synonyms.filter((s) => s.strategy === '무조건 치환').length}, 조건부=${synonyms.filter((s) => s.strategy === '맥락 조건부').length}, 수동=${synonyms.filter((s) => s.strategy === '수동 확인').length})`);
+console.log(`가이드 길이: ${guideText ? `${guideText.length} chars` : 'none'}`);
 console.log(`전체 프롬프트 길이: ${prompt.length} chars (${transcript.length} chars transcript)`);

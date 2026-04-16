@@ -215,16 +215,32 @@ function buildBlocks(data, transcriptFileUpload = null) {
   const text = (s) => [{ type: 'text', text: { content: s } }];
   const bold = (s) => [{ type: 'text', text: { content: s }, annotations: { bold: true } }];
 
-  const bullets = (items) =>
-    items.map((s) => ({
+  const bullet = (richText, children) => {
+    const b = {
       object: 'block',
       type: 'bulleted_list_item',
-      bulleted_list_item: { rich_text: text(s) },
-    }));
+      bulleted_list_item: { rich_text: richText },
+    };
+    if (children && children.length) b.bulleted_list_item.children = children;
+    return b;
+  };
+  const bullets = (items) => items.map((s) => bullet(text(s)));
+
+  const heading2 = (emoji, title) => ({
+    object: 'block',
+    type: 'heading_2',
+    heading_2: { rich_text: text(`${emoji} ${title}`) },
+  });
+  const heading3 = (content) => ({
+    object: 'block',
+    type: 'heading_3',
+    heading_3: { rich_text: text(content) },
+  });
 
   const blocks = [];
 
-  // 컬럼 레이아웃 (기본 정보 / 후속 진행 업무)
+  // ===== 메타 영역: 2단 컬럼 × 연한 회색 콜아웃 =====
+  // (템플릿성 수동 편집 영역 — 본문과 시각적으로 구분)
   blocks.push({
     object: 'block',
     type: 'column_list',
@@ -240,29 +256,15 @@ function buildBlocks(data, transcriptFileUpload = null) {
                 type: 'callout',
                 callout: {
                   icon: { type: 'emoji', emoji: '✅' },
-                  color: 'blue_background',
+                  color: 'gray_background',
                   rich_text: bold('기본 정보'),
                   children: [
-                    {
-                      object: 'block',
-                      type: 'bulleted_list_item',
-                      bulleted_list_item: {
-                        rich_text: [
-                          { type: 'text', text: { content: '회의 주제: ' }, annotations: { bold: true } },
-                          { type: 'text', text: { content: data.topic || '' } },
-                        ],
-                      },
-                    },
-                    {
-                      object: 'block',
-                      type: 'bulleted_list_item',
-                      bulleted_list_item: { rich_text: bold('회의 자료:') },
-                    },
-                    {
-                      object: 'block',
-                      type: 'bulleted_list_item',
-                      bulleted_list_item: { rich_text: bold('관련 일감:') },
-                    },
+                    bullet([
+                      { type: 'text', text: { content: '회의 주제: ' }, annotations: { bold: true } },
+                      { type: 'text', text: { content: data.topic || '' } },
+                    ]),
+                    bullet(bold('회의 자료:')),
+                    bullet(bold('관련 일감:')),
                   ],
                 },
               },
@@ -279,16 +281,14 @@ function buildBlocks(data, transcriptFileUpload = null) {
                 type: 'callout',
                 callout: {
                   icon: { type: 'emoji', emoji: '🚩' },
-                  color: 'blue_background',
+                  color: 'gray_background',
                   rich_text: bold('후속 진행 업무'),
                   children: [
-                    {
-                      object: 'block',
-                      type: 'bulleted_list_item',
-                      bulleted_list_item: {
-                        rich_text: [{ type: 'text', text: { content: 'Jira 일감 복사' }, annotations: { italic: true, color: 'yellow' } }],
-                      },
-                    },
+                    bullet([{
+                      type: 'text',
+                      text: { content: 'Jira 일감 복사' },
+                      annotations: { italic: true, color: 'yellow' },
+                    }]),
                   ],
                 },
               },
@@ -301,102 +301,55 @@ function buildBlocks(data, transcriptFileUpload = null) {
 
   blocks.push({ object: 'block', type: 'divider', divider: {} });
 
-  // 아젠다
-  const agendaChildren = [];
-  for (const a of data.agenda || []) {
-    agendaChildren.push({
-      object: 'block',
-      type: 'bulleted_list_item',
-      bulleted_list_item: {
-        rich_text: bold(a.title),
-        children: bullets(a.items || []),
-      },
-    });
-  }
-  if (agendaChildren.length === 0) {
-    agendaChildren.push({
-      object: 'block',
-      type: 'bulleted_list_item',
-      bulleted_list_item: { rich_text: text('(명시된 아젠다 없음)') },
-    });
-  }
-  blocks.push({
-    object: 'block',
-    type: 'callout',
-    callout: {
-      icon: { type: 'emoji', emoji: '📌' },
-      color: 'blue_background',
-      rich_text: bold('아젠다'),
-      children: agendaChildren,
-    },
-  });
+  // ===== 본문: heading_2 섹션 × 4 =====
 
-  // 논의 사항
-  const discussionChildren = [];
-  for (const d of data.discussion || []) {
-    discussionChildren.push({
-      object: 'block',
-      type: 'bulleted_list_item',
-      bulleted_list_item: {
-        rich_text: bold(d.topic),
-        children: bullets(d.points || []),
-      },
-    });
+  // 📌 아젠다
+  blocks.push(heading2('📌', '아젠다'));
+  if ((data.agenda || []).length === 0) {
+    blocks.push(bullet(text('(명시된 아젠다 없음)')));
+  } else {
+    for (const a of data.agenda) {
+      blocks.push(bullet(bold(a.title), bullets(a.items || [])));
+    }
   }
-  blocks.push({
-    object: 'block',
-    type: 'callout',
-    callout: {
-      icon: { type: 'emoji', emoji: '💬' },
-      color: 'blue_background',
-      rich_text: bold('논의 사항'),
-      children: discussionChildren.length ? discussionChildren : [{
+
+  // 💬 논의 사항 — 토픽은 heading_3로 승격, 포인트는 평평한 bullets
+  blocks.push(heading2('💬', '논의 사항'));
+  if ((data.discussion || []).length === 0) {
+    blocks.push(bullet(text('(논의 내용 없음)')));
+  } else {
+    for (const d of data.discussion) {
+      blocks.push(heading3(d.topic));
+      for (const p of d.points || []) {
+        blocks.push(bullet(text(p)));
+      }
+    }
+  }
+
+  // 🎯 결정 사항
+  blocks.push(heading2('🎯', '결정 사항'));
+  if ((data.decisions || []).length === 0) {
+    blocks.push(bullet(text('(결정된 사항 없음)')));
+  } else {
+    for (const d of data.decisions) {
+      blocks.push(bullet(text(d)));
+    }
+  }
+
+  // ✅ To-do
+  blocks.push(heading2('✅', 'To-do'));
+  const todoItems = (data.todos || []).length
+    ? data.todos.map((s) => ({
         object: 'block',
-        type: 'bulleted_list_item',
-        bulleted_list_item: { rich_text: text('(논의 내용 없음)') },
-      }],
-    },
-  });
-
-  // 결정 사항
-  blocks.push({
-    object: 'block',
-    type: 'callout',
-    callout: {
-      icon: { type: 'emoji', emoji: '🎯' },
-      color: 'blue_background',
-      rich_text: bold('결정 사항'),
-      children: (data.decisions || []).length
-        ? bullets(data.decisions)
-        : [{
-            object: 'block',
-            type: 'bulleted_list_item',
-            bulleted_list_item: { rich_text: text('(결정된 사항 없음)') },
-          }],
-    },
-  });
-
-  // To-do
-  blocks.push({
-    object: 'block',
-    type: 'callout',
-    callout: {
-      icon: { type: 'emoji', emoji: '✅' },
-      color: 'blue_background',
-      rich_text: bold('To-do'),
-      children: (data.todos || []).length
-        ? data.todos.map((s) => ({
-            object: 'block',
-            type: 'to_do',
-            to_do: { rich_text: text(s), checked: false },
-          }))
-        : [{
-            object: 'block',
-            type: 'to_do',
-            to_do: { rich_text: text(''), checked: false },
-          }],
-    },
-  });
+        type: 'to_do',
+        to_do: { rich_text: text(s), checked: false },
+      }))
+    : [{
+        object: 'block',
+        type: 'to_do',
+        to_do: { rich_text: text(''), checked: false },
+      }];
+  blocks.push(...todoItems);
 
   // 전사 원문 파일 (있을 때만 페이지 하단에 file block 추가)
   if (transcriptFileUpload) {
