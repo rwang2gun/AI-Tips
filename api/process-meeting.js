@@ -2,39 +2,39 @@
 // 회의록 자동 생성 — 서버리스 함수
 // ============================================================
 //
-// [흐름]
-//   클라이언트(meeting-notes/app.js)에서 여섯 단계로 호출:
-//   1. upload-chunk (X-Action 헤더)
-//      → 오디오 청크(3.5MB 이하)를 Vercel Blob에 임시 저장
-//      → 1시간 녹음 ≈ 14MB → 4청크로 분할 업로드
-//   2. prepare (X-Action 헤더)
-//      → 모든 청크 결합 → Gemini Files API 업로드
-//      → 파일 URI 반환 (ACTIVE 대기는 클라이언트에서 폴링)
-//   3. check-file (X-Action 헤더)
-//      → Gemini 파일 처리 상태 확인 (클라이언트가 주기적 호출)
-//   4. transcribe (X-Action 헤더)
-//      → Gemini 2.5 Flash로 한국어 전사문 생성
-//      → transcript.txt로 Vercel Blob에 저장
-//   5. summarize (X-Action 헤더)
-//      → 전사문 읽어 Gemini에 보내 구조화 JSON 추출
-//      → result.json으로 Blob에 저장
-//   6. finalize-notion (X-Action 헤더)
-//      → result.json 읽어 Notion 페이지 생성
-//      → Blob 세션 폴더 전체 정리
+// [흐름 — segment 기반 파이프라인]
+//   클라이언트(meeting-notes/app.js)가 5분 단위로 녹음을 분할하여
+//   segment 하나당 독립 webm 파일을 만들고 다음 액션들을 호출:
 //
-// [단계 분할 이유]
-//   Vercel Hobby 함수는 60초 실행 한도. 긴 회의는 단일 Gemini 호출
-//   (오디오→JSON)이 50~60초 이상 소요되어 FUNCTION_INVOCATION_TIMEOUT.
-//   전사 단계(오디오→텍스트)와 요약 단계(텍스트→JSON)로 분리하면
-//   각 Gemini 호출이 짧아져 타임아웃 회피 + 전사본이 중간 산출물로 남아
-//   요약 실패 시 재전사 불필요.
+//   세그먼트별 (S = 세그먼트 인덱스):
+//     1. upload-chunk         (X-Segment-Index: S)
+//        → 세그먼트 S의 오디오 청크(3.5MB 이하)를
+//          meetings/<sid>/seg-NN/chunk-NNNN.bin 로 저장
+//     2. prepare-segment      ({ sessionId, segmentIndex: S, mimeType })
+//        → 세그먼트 S의 청크 결합 → Gemini Files API 업로드
+//        → 파일 URI 반환 (ACTIVE 대기는 클라이언트에서 폴링)
+//     3. check-file           (Gemini 파일 ACTIVE 상태 폴링)
+//     4. transcribe-segment   ({ sessionId, segmentIndex: S, fileUri, ... })
+//        → 세그먼트 S 한국어 전사 → meetings/<sid>/transcript-NN.txt
 //
-// [한계]
-//   단일 transcribe 호출은 오디오 ~30분까지 60초 안에 처리 가능.
-//   더 긴 회의는 녹음 단계에서 MediaRecorder를 10분 세션으로 나눠
-//   독립 오디오 파일 여러 개로 저장해야 함 (RECOVERY-PLAN.md Step 4 참고).
+//   모든 세그먼트 처리 후:
+//     5. merge-transcripts    ({ sessionId, totalSegments })
+//        → transcript-NN.txt 전체를 시간순 정렬·결합 → transcript.txt
+//     6. summarize            (전사문 → 구조화 JSON → result.json)
+//     7. finalize-notion      (Notion 페이지 생성 + 세션 폴더 정리)
+//
+// [세그먼트 분할 이유]
+//   Vercel Hobby 함수 60초 한도 내에서 긴 회의를 처리하려면 단일 Gemini
+//   호출의 입력 오디오 길이를 짧게 유지해야 함. 30분 이상 단일 오디오는
+//   transcribe 호출이 60초 초과 + Flash가 긴 단일 오디오에서 generation
+//   loop(같은 문장 반복) 일으킴. 5분이 실전 안정 기준치.
 //   ※ Gemini Files API의 videoMetadata.startOffset/endOffset은 audio에
-//      적용 안 됨 (video 전용) — silently ignored.
+//     silently ignored — 서버단 가상 분할 불가, 클라이언트단 실제 분할 필요.
+//
+// [legacy 액션]
+//   prepare / transcribe (단일 파일 처리)는 meeting-notes/recover.html의
+//   기존 실패 세션(seg-NN 폴더 없는 경우) 복구용으로 보존. 신규 녹음은
+//   항상 segment 경로를 사용함.
 //
 // [핵심 설계 결정]
 //   - 청크 3.5MB 분할: Vercel Hobby 4.5MB 본문 한도 때문
@@ -98,6 +98,29 @@ function jsonResponse(res, status, body) {
   res.send(JSON.stringify(body));
 }
 
+// Gemini 503/429/일시적 거절을 지수 백오프로 재시도.
+// Vercel 60초 한도 안에 끝나도록 maxAttempts/maxDelay 보수적으로 설정.
+async function withRetry(fn, { maxAttempts = 3, baseDelayMs = 2000, maxDelayMs = 8000 } = {}) {
+  let lastErr;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const status = err?.status || err?.response?.status;
+      const msg = err?.message || '';
+      const retriable =
+        status === 429 || status === 500 || status === 503 ||
+        /overloaded|UNAVAILABLE|RESOURCE_EXHAUSTED|503|429/i.test(msg);
+      if (!retriable || attempt === maxAttempts) throw err;
+      const delay = Math.min(baseDelayMs * 2 ** (attempt - 1), maxDelayMs);
+      console.warn(`[withRetry] attempt ${attempt}/${maxAttempts} failed (${status || 'unknown'}): ${msg.slice(0, 120)}; retrying in ${delay}ms`);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw lastErr;
+}
+
 // ------- 메인 핸들러 -------
 
 export default async function handler(req, res) {
@@ -111,20 +134,30 @@ export default async function handler(req, res) {
     if (action === 'upload-chunk') {
       return await handleUploadChunk(req, res);
     }
-    if (action === 'prepare') {
-      return await handlePrepare(req, res);
+    if (action === 'prepare-segment') {
+      return await handlePrepareSegment(req, res);
+    }
+    if (action === 'transcribe-segment') {
+      return await handleTranscribeSegment(req, res);
+    }
+    if (action === 'merge-transcripts') {
+      return await handleMergeTranscripts(req, res);
     }
     if (action === 'check-file') {
       return await handleCheckFile(req, res);
-    }
-    if (action === 'transcribe') {
-      return await handleTranscribe(req, res);
     }
     if (action === 'summarize') {
       return await handleSummarize(req, res);
     }
     if (action === 'finalize-notion') {
       return await handleFinalizeNotion(req, res);
+    }
+    // legacy — recover.html에서 단일 파일 세션 복구 시 사용
+    if (action === 'prepare') {
+      return await handlePrepare(req, res);
+    }
+    if (action === 'transcribe') {
+      return await handleTranscribe(req, res);
     }
     return jsonResponse(res, 400, { error: 'Unknown X-Action' });
   } catch (err) {
@@ -142,6 +175,7 @@ async function handleUploadChunk(req, res) {
   const sessionId = req.headers['x-session-id'];
   const chunkIndex = req.headers['x-chunk-index'];
   const totalChunks = req.headers['x-total-chunks'];
+  const segmentIndex = req.headers['x-segment-index']; // 신규: segment 단위. 없으면 legacy 경로
 
   if (!sessionId || chunkIndex == null || !totalChunks) {
     return jsonResponse(res, 400, { error: 'Missing session/chunk headers' });
@@ -152,9 +186,18 @@ async function handleUploadChunk(req, res) {
     return jsonResponse(res, 400, { error: 'Invalid session id' });
   }
 
-  const buffer = await readRawBody(req);
-  const key = `meetings/${sessionId}/chunk-${String(chunkIndex).padStart(4, '0')}.bin`;
+  let key;
+  if (segmentIndex != null) {
+    const segNum = Number(segmentIndex);
+    if (!Number.isInteger(segNum) || segNum < 0 || segNum > 999) {
+      return jsonResponse(res, 400, { error: 'Invalid segment index' });
+    }
+    key = `meetings/${sessionId}/seg-${String(segNum).padStart(2, '0')}/chunk-${String(chunkIndex).padStart(4, '0')}.bin`;
+  } else {
+    key = `meetings/${sessionId}/chunk-${String(chunkIndex).padStart(4, '0')}.bin`;
+  }
 
+  const buffer = await readRawBody(req);
   await put(key, buffer, {
     access: 'public', // Vercel Blob 정책상 필요. 키가 추측 불가능한 UUID라 사실상 비공개
     addRandomSuffix: false,
@@ -284,6 +327,173 @@ async function handleTranscribe(req, res) {
   });
 }
 
+// ------- segment 단계 1: 한 세그먼트 청크 결합 + Gemini Files API 업로드 -------
+
+async function handlePrepareSegment(req, res) {
+  const body = await readJsonBody(req);
+  const { sessionId, segmentIndex, mimeType } = body;
+
+  if (!sessionId || !/^[0-9a-f-]{36}$/i.test(sessionId)) {
+    return jsonResponse(res, 400, { error: 'Invalid session id' });
+  }
+  if (!Number.isInteger(segmentIndex) || segmentIndex < 0 || segmentIndex > 999) {
+    return jsonResponse(res, 400, { error: 'Invalid segment index' });
+  }
+
+  const segPrefix = `meetings/${sessionId}/seg-${String(segmentIndex).padStart(2, '0')}/`;
+  const { blobs } = await list({ prefix: segPrefix });
+  if (!blobs.length) {
+    return jsonResponse(res, 400, { error: `No chunks found for segment ${segmentIndex}` });
+  }
+  blobs.sort((a, b) => a.pathname.localeCompare(b.pathname));
+
+  const chunkBuffers = await Promise.all(
+    blobs.map(async (b) => {
+      const r = await fetch(b.url);
+      return Buffer.from(await r.arrayBuffer());
+    })
+  );
+  const audioBuffer = Buffer.concat(chunkBuffers);
+
+  const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const audioBlob = new Blob([audioBuffer], { type: mimeType || 'audio/webm' });
+  const uploaded = await withRetry(() =>
+    genAI.files.upload({
+      file: audioBlob,
+      config: { mimeType: mimeType || 'audio/webm' },
+    })
+  );
+
+  return jsonResponse(res, 200, {
+    ok: true,
+    segmentIndex,
+    fileName: uploaded.name,
+    fileUri: uploaded.uri,
+    fileMimeType: uploaded.mimeType,
+    state: uploaded.state,
+  });
+}
+
+// ------- segment 단계 2: 한 세그먼트 전사 → transcript-NN.txt -------
+
+async function handleTranscribeSegment(req, res) {
+  const body = await readJsonBody(req);
+  const { sessionId, segmentIndex, fileUri, fileMimeType, totalSegments } = body;
+
+  if (!sessionId || !/^[0-9a-f-]{36}$/i.test(sessionId)) {
+    return jsonResponse(res, 400, { error: 'Invalid session id' });
+  }
+  if (!Number.isInteger(segmentIndex) || segmentIndex < 0 || segmentIndex > 999) {
+    return jsonResponse(res, 400, { error: 'Invalid segment index' });
+  }
+  if (!fileUri || !fileMimeType) {
+    return jsonResponse(res, 400, { error: 'Missing fileUri/fileMimeType' });
+  }
+
+  const part = totalSegments
+    ? `이 오디오는 전체 회의 중 ${segmentIndex + 1}/${totalSegments} 번째 5분 구간입니다.`
+    : `이 오디오는 전체 회의의 한 구간입니다.`;
+
+  const promptText = `${part} 앞뒤 구간은 별도로 처리되니 이 구간만 정확히 한국어로 전사하세요.
+
+[규칙]
+1. 들리는 내용을 누락 없이 옮겨 쓸 것
+2. 발언자 구분은 하지 말고 발언 순서대로 작성
+3. "음", "어" 같은 군더더기는 생략하되 실제 의미 있는 말은 모두 포함
+4. 잘 안 들리는 구간은 [불분명] 으로 표시
+5. 문장 단위로 줄바꿈하여 가독성 확보
+6. 해설이나 요약 없이 들은 말만 옮겨 쓸 것
+7. 구간 시작/끝에 별도 표시(타임스탬프 등) 추가하지 말 것 — 본문만 출력`;
+
+  const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const result = await withRetry(() =>
+    genAI.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [
+        createUserContent([
+          promptText,
+          createPartFromUri(fileUri, fileMimeType),
+        ]),
+      ],
+      // thinking OFF — Flash가 단순 전사에서 thinking에 출력 토큰 소비 후 MAX_TOKENS로 빈 응답 반환하는 이슈 회피 (PR #8 참고)
+      config: {
+        maxOutputTokens: 65536,
+        thinkingConfig: { thinkingBudget: 0 },
+      },
+    })
+  );
+
+  const transcript = result.text || '';
+  if (!transcript.trim()) {
+    return jsonResponse(res, 500, { error: `Empty transcript for segment ${segmentIndex}` });
+  }
+
+  const key = `meetings/${sessionId}/transcript-${String(segmentIndex).padStart(2, '0')}.txt`;
+  await put(key, transcript, {
+    access: 'public',
+    contentType: 'text/plain; charset=utf-8',
+    addRandomSuffix: false,
+    allowOverwrite: true,
+  });
+
+  return jsonResponse(res, 200, {
+    ok: true,
+    segmentIndex,
+    transcriptLength: transcript.length,
+  });
+}
+
+// ------- segment 단계 3: transcript-NN.txt 전체 결합 → transcript.txt -------
+
+async function handleMergeTranscripts(req, res) {
+  const body = await readJsonBody(req);
+  const { sessionId, totalSegments } = body;
+
+  if (!sessionId || !/^[0-9a-f-]{36}$/i.test(sessionId)) {
+    return jsonResponse(res, 400, { error: 'Invalid session id' });
+  }
+
+  const prefix = `meetings/${sessionId}/transcript-`;
+  const { blobs } = await list({ prefix });
+  const segmentBlobs = blobs
+    .filter((b) => /\/transcript-\d{2}\.txt$/.test(b.pathname))
+    .sort((a, b) => a.pathname.localeCompare(b.pathname));
+
+  if (!segmentBlobs.length) {
+    return jsonResponse(res, 400, { error: 'No segment transcripts found' });
+  }
+  if (totalSegments && segmentBlobs.length !== totalSegments) {
+    return jsonResponse(res, 400, {
+      error: `Segment count mismatch: expected ${totalSegments}, got ${segmentBlobs.length}`,
+    });
+  }
+
+  const SEGMENT_MINUTES = 5;
+  const parts = await Promise.all(
+    segmentBlobs.map(async (b, i) => {
+      const r = await fetch(b.url);
+      const text = (await r.text()).trim();
+      const startMin = i * SEGMENT_MINUTES;
+      const endMin = startMin + SEGMENT_MINUTES;
+      return `--- [${startMin}:00 ~ ${endMin}:00] ---\n${text}`;
+    })
+  );
+  const merged = parts.join('\n\n');
+
+  await put(`meetings/${sessionId}/transcript.txt`, merged, {
+    access: 'public',
+    contentType: 'text/plain; charset=utf-8',
+    addRandomSuffix: false,
+    allowOverwrite: true,
+  });
+
+  return jsonResponse(res, 200, {
+    ok: true,
+    segmentCount: segmentBlobs.length,
+    transcriptLength: merged.length,
+  });
+}
+
 // ------- 4단계: 전사문 → 구조화 JSON 요약 -------
 
 async function handleSummarize(req, res) {
@@ -340,18 +550,40 @@ ${transcript}
 8. agenda: 회의 시작 시 명시적으로 다룬 안건. 없으면 빈 배열
 9. discussion: 실제 오간 논의 (가장 중요)
 10. decisions: 명확히 합의/결정된 사항만
-11. todos: 누가 무엇을 언제까지 할지 명시된 액션 아이템`;
+11. todos: 누가 무엇을 언제까지 할지 명시된 액션 아이템
+12. **항목별 근거 인용 (sourceQuote)** — 사후 검토용 근거 자료, 본문에는 표시되지 않음
+   - discussion.points / decisions / todos 각 항목에 sourceQuote 필드 작성
+   - 인용은 전사문에서 그대로 가져온 10~80자 짧은 발췌 (변형/요약 금지)
+   - 한 항목 본문이 여러 발언에 기반하면 가장 결정적인 한 문장 선택
+   - 명시적 발언 없이 추정/유추로 작성한 항목은 sourceQuote를 빈 문자열로
+     (환각 시그널이므로 정직하게 빈 문자열을 두는 것이 중요)`;
 
-  const result = await genAI.models.generateContent({
-    model: 'gemini-2.5-flash',
-    contents: [createUserContent([promptText])],
-    config: {
-      responseMimeType: 'application/json',
-      responseSchema: meetingSchema(),
-    },
-  });
+  const result = await withRetry(() =>
+    genAI.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [createUserContent([promptText])],
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: meetingSchema(),
+      },
+    })
+  );
 
   const meetingData = JSON.parse(result.text);
+
+  // 1차 topic이 50자 초과면 Pro로 한 번 더 압축. 입력이 작아 빠르고 503 위험 적음.
+  // 실패 시 1차 topic 유지 (요약 자체는 이미 성공).
+  if (meetingData.topic && meetingData.topic.length > 50) {
+    try {
+      const refined = await withRetry(() => refineTopic(genAI, meetingData));
+      if (refined && refined.length > 0 && refined.length < meetingData.topic.length) {
+        console.log(`[refine-topic] ${meetingData.topic.length} → ${refined.length} chars`);
+        meetingData.topic = refined;
+      }
+    } catch (e) {
+      console.warn('[refine-topic] failed (1차 topic 유지):', e?.message);
+    }
+  }
 
   // 결과 JSON을 Blob에 저장 (다음 단계 finalize-notion에서 읽음)
   const payload = { meetingData, date: today };
@@ -389,10 +621,28 @@ async function handleFinalizeNotion(req, res) {
   const r = await fetch(resultBlob.url);
   const { meetingData, date } = await r.json();
 
-  // Notion 페이지 생성
-  const notionUrl = await createNotionPage(meetingData, date);
+  // 전사 원문을 Notion에 업로드 (실패해도 페이지 생성은 진행)
+  // Blob을 청소하기 직전에 끌어올려 진단 자료로 영구 보존.
+  let transcriptUpload = null;
+  try {
+    const transcriptKey = `meetings/${sessionId}/transcript.txt`;
+    const { blobs: txBlobs } = await list({ prefix: transcriptKey });
+    const txBlob = txBlobs.find((b) => b.pathname === transcriptKey);
+    if (txBlob) {
+      const txRes = await fetch(txBlob.url);
+      const transcriptText = await txRes.text();
+      const filename = buildTranscriptFilename(meetingData.title, date);
+      const id = await uploadTranscriptToNotion(transcriptText, filename);
+      transcriptUpload = { id, charCount: transcriptText.length };
+    }
+  } catch (e) {
+    console.warn('[transcript-upload] failed (페이지는 첨부 없이 생성):', e?.message);
+  }
 
-  // 청크 + 전사 + 결과 파일 모두 정리 (Gemini 파일은 48시간 후 자동 삭제됨)
+  // Notion 페이지 생성 (진단 토글 안에 transcript 첨부 + sourceQuote 매핑 포함)
+  const notionUrl = await createNotionPage(meetingData, date, transcriptUpload);
+
+  // 청크 + 전사 + 결과 파일 모두 정리 (전사는 이미 Notion에 첨부됐고, Gemini 파일은 48시간 후 자동 삭제)
   await cleanupChunks(prefix);
 
   return jsonResponse(res, 200, {
@@ -402,14 +652,66 @@ async function handleFinalizeNotion(req, res) {
   });
 }
 
+// ------- 1차 topic 재압축 (Pro) -------
+
+// 1차 요약(Flash) 결과의 topic이 50자 초과일 때 Pro로 한 번 더 짧게 압축.
+// 입력은 title + 1차 topic + agenda 제목들로 매우 작아서 빠르게 끝남.
+async function refineTopic(genAI, meetingData) {
+  const agendaTitles = (meetingData.agenda || [])
+    .map((a) => `- ${a.title}`)
+    .filter((s) => s.length > 2)
+    .join('\n');
+
+  const prompt = `다음은 게임 기획 회의의 1차 요약 결과입니다. topic 필드가 길어서 한 줄로 다시 압축이 필요합니다.
+
+[제목]
+${meetingData.title || '(없음)'}
+
+[현재 topic — ${meetingData.topic.length}자]
+${meetingData.topic}
+
+${agendaTitles ? `[아젠다 제목들]\n${agendaTitles}\n` : ''}
+요구사항:
+- 50자 이내 한 문장으로 회의의 본질적 주제만 표현
+- 아젠다 항목을 나열하지 말 것 ("A, B, C 논의" 같은 형태 금지)
+- 새로운 topic 한 줄만 출력. 따옴표/접두어/설명 없이 본문만.`;
+
+  const result = await genAI.models.generateContent({
+    model: 'gemini-2.5-pro',
+    contents: [createUserContent([prompt])],
+    config: { maxOutputTokens: 256 },
+  });
+
+  let text = (result.text || '').trim();
+  text = text.split('\n')[0].trim();
+  text = text.replace(/^["'`「『\[(](.*)["'`」』\])]$/s, '$1').trim();
+  text = text.replace(/^[Tt]opic\s*[:：]\s*/, '').trim();
+  return text;
+}
+
 // ------- Gemini 응답 스키마 -------
 
 function meetingSchema() {
+  // 항목별 "근거 인용"을 함께 받는 재사용 타입.
+  // sourceQuote가 빈 문자열이면 "명시적 발언 없음 = 환각/추정 의심" 신호로 활용.
+  const evidenced = {
+    type: 'object',
+    properties: {
+      text: { type: 'string', description: '항목 본문 (한국어)' },
+      sourceQuote: {
+        type: 'string',
+        description:
+          '이 항목의 근거가 된 전사문에서의 짧은 인용 (원문 그대로 10~80자). 명시적 발언 없이 추정/유추로 작성한 항목은 빈 문자열.',
+      },
+    },
+    required: ['text', 'sourceQuote'],
+  };
+
   return {
     type: 'object',
     properties: {
       title: { type: 'string', description: '회의 제목 (30자 이내)' },
-      topic: { type: 'string', description: '회의 주제 한 문장' },
+      topic: { type: 'string', description: '회의 주제 한 줄 요약 (50자 이내). 아젠다를 나열하지 말고 핵심만 짧게.' },
       meetingType: {
         type: 'string',
         enum: ['킥오프', '내부 논의', '실무 논의', '기타'],
@@ -435,13 +737,13 @@ function meetingSchema() {
           type: 'object',
           properties: {
             topic: { type: 'string' },
-            points: { type: 'array', items: { type: 'string' } },
+            points: { type: 'array', items: evidenced },
           },
           required: ['topic', 'points'],
         },
       },
-      decisions: { type: 'array', items: { type: 'string' } },
-      todos: { type: 'array', items: { type: 'string' } },
+      decisions: { type: 'array', items: evidenced },
+      todos: { type: 'array', items: evidenced },
     },
     required: ['title', 'topic', 'meetingType', 'labels', 'agenda', 'discussion', 'decisions', 'todos'],
   };
@@ -449,7 +751,7 @@ function meetingSchema() {
 
 // ------- Notion 페이지 생성 -------
 
-async function createNotionPage(data, dateStr) {
+async function createNotionPage(data, dateStr, transcriptUpload = null) {
   const notion = new NotionClient({ auth: process.env.NOTION_TOKEN });
   const databaseId = process.env.NOTION_DATABASE_ID;
 
@@ -462,7 +764,7 @@ async function createNotionPage(data, dateStr) {
     properties['레이블'] = { multi_select: data.labels.map((name) => ({ name })) };
   }
 
-  const children = buildBlocks(data);
+  const children = buildBlocks(data, transcriptUpload);
 
   const page = await notion.pages.create({
     parent: { database_id: databaseId },
@@ -473,21 +775,40 @@ async function createNotionPage(data, dateStr) {
   return page.url;
 }
 
-// 회의록 서식 구조에 맞춰 Notion 블록 구성
-function buildBlocks(data) {
+// 항목 형태 호환 헬퍼: 신 schema는 {text, sourceQuote} 객체, 구 schema는 plain string
+function itemText(x) { return typeof x === 'string' ? x : (x?.text || ''); }
+function itemQuote(x) { return typeof x === 'string' ? '' : (x?.sourceQuote || ''); }
+
+// 회의록 서식 구조에 맞춰 Notion 블록 구성 (scripts/upload-to-notion.js와 동기화 유지)
+function buildBlocks(data, transcriptUpload = null) {
   const text = (s) => [{ type: 'text', text: { content: s } }];
   const bold = (s) => [{ type: 'text', text: { content: s }, annotations: { bold: true } }];
 
-  const bullets = (items) =>
-    items.map((s) => ({
+  const bullet = (richText, children) => {
+    const b = {
       object: 'block',
       type: 'bulleted_list_item',
-      bulleted_list_item: { rich_text: text(s) },
-    }));
+      bulleted_list_item: { rich_text: richText },
+    };
+    if (children?.length) b.bulleted_list_item.children = children;
+    return b;
+  };
+  const bullets = (items) => items.map((s) => bullet(text(s)));
+
+  const heading2 = (emoji, title) => ({
+    object: 'block',
+    type: 'heading_2',
+    heading_2: { rich_text: text(`${emoji} ${title}`) },
+  });
+  const heading3 = (content) => ({
+    object: 'block',
+    type: 'heading_3',
+    heading_3: { rich_text: text(content) },
+  });
 
   const blocks = [];
 
-  // 컬럼 레이아웃 (기본 정보 / 후속 진행 업무)
+  // ===== 메타 영역: 2단 컬럼 × 회색 콜아웃 (수동 편집 영역) =====
   blocks.push({
     object: 'block',
     type: 'column_list',
@@ -497,65 +818,45 @@ function buildBlocks(data) {
           object: 'block',
           type: 'column',
           column: {
-            children: [
-              {
-                object: 'block',
-                type: 'callout',
-                callout: {
-                  icon: { type: 'emoji', emoji: '✅' },
-                  color: 'blue_background',
-                  rich_text: bold('기본 정보'),
-                  children: [
-                    {
-                      object: 'block',
-                      type: 'bulleted_list_item',
-                      bulleted_list_item: {
-                        rich_text: [
-                          { type: 'text', text: { content: '회의 주제: ' }, annotations: { bold: true } },
-                          { type: 'text', text: { content: data.topic || '' } },
-                        ],
-                      },
-                    },
-                    {
-                      object: 'block',
-                      type: 'bulleted_list_item',
-                      bulleted_list_item: { rich_text: bold('회의 자료:') },
-                    },
-                    {
-                      object: 'block',
-                      type: 'bulleted_list_item',
-                      bulleted_list_item: { rich_text: bold('관련 일감:') },
-                    },
-                  ],
-                },
+            children: [{
+              object: 'block',
+              type: 'callout',
+              callout: {
+                icon: { type: 'emoji', emoji: '✅' },
+                color: 'gray_background',
+                rich_text: bold('기본 정보'),
+                children: [
+                  bullet([
+                    { type: 'text', text: { content: '회의 주제: ' }, annotations: { bold: true } },
+                    { type: 'text', text: { content: data.topic || '' } },
+                  ]),
+                  bullet(bold('회의 자료:')),
+                  bullet(bold('관련 일감:')),
+                ],
               },
-            ],
+            }],
           },
         },
         {
           object: 'block',
           type: 'column',
           column: {
-            children: [
-              {
-                object: 'block',
-                type: 'callout',
-                callout: {
-                  icon: { type: 'emoji', emoji: '🚩' },
-                  color: 'blue_background',
-                  rich_text: bold('후속 진행 업무'),
-                  children: [
-                    {
-                      object: 'block',
-                      type: 'bulleted_list_item',
-                      bulleted_list_item: {
-                        rich_text: [{ type: 'text', text: { content: 'Jira 일감 복사' }, annotations: { italic: true, color: 'yellow' } }],
-                      },
-                    },
-                  ],
-                },
+            children: [{
+              object: 'block',
+              type: 'callout',
+              callout: {
+                icon: { type: 'emoji', emoji: '🚩' },
+                color: 'gray_background',
+                rich_text: bold('후속 진행 업무'),
+                children: [
+                  bullet([{
+                    type: 'text',
+                    text: { content: 'Jira 일감 복사' },
+                    annotations: { italic: true, color: 'yellow' },
+                  }]),
+                ],
               },
-            ],
+            }],
           },
         },
       ],
@@ -564,104 +865,202 @@ function buildBlocks(data) {
 
   blocks.push({ object: 'block', type: 'divider', divider: {} });
 
-  // 아젠다
-  const agendaChildren = [];
-  for (const a of data.agenda || []) {
-    agendaChildren.push({
-      object: 'block',
-      type: 'bulleted_list_item',
-      bulleted_list_item: {
-        rich_text: bold(a.title),
-        children: bullets(a.items || []),
-      },
-    });
-  }
-  if (agendaChildren.length === 0) {
-    agendaChildren.push({
-      object: 'block',
-      type: 'bulleted_list_item',
-      bulleted_list_item: { rich_text: text('(명시된 아젠다 없음)') },
-    });
-  }
-  blocks.push({
-    object: 'block',
-    type: 'callout',
-    callout: {
-      icon: { type: 'emoji', emoji: '📌' },
-      color: 'blue_background',
-      rich_text: bold('아젠다'),
-      children: agendaChildren,
-    },
-  });
+  // ===== 본문: heading_2 섹션 × 4 (sourceQuote는 진단 토글에서만 노출) =====
 
-  // 논의 사항
-  const discussionChildren = [];
-  for (const d of data.discussion || []) {
-    discussionChildren.push({
-      object: 'block',
-      type: 'bulleted_list_item',
-      bulleted_list_item: {
-        rich_text: bold(d.topic),
-        children: bullets(d.points || []),
-      },
-    });
+  blocks.push(heading2('📌', '아젠다'));
+  if ((data.agenda || []).length === 0) {
+    blocks.push(bullet(text('(명시된 아젠다 없음)')));
+  } else {
+    for (const a of data.agenda) {
+      blocks.push(bullet(bold(a.title), bullets(a.items || [])));
+    }
   }
-  blocks.push({
-    object: 'block',
-    type: 'callout',
-    callout: {
-      icon: { type: 'emoji', emoji: '💬' },
-      color: 'blue_background',
-      rich_text: bold('논의 사항'),
-      children: discussionChildren.length ? discussionChildren : [{
+
+  blocks.push(heading2('💬', '논의 사항'));
+  if ((data.discussion || []).length === 0) {
+    blocks.push(bullet(text('(논의 내용 없음)')));
+  } else {
+    for (const d of data.discussion) {
+      blocks.push(heading3(d.topic));
+      for (const p of d.points || []) {
+        blocks.push(bullet(text(itemText(p))));
+      }
+    }
+  }
+
+  blocks.push(heading2('🎯', '결정 사항'));
+  if ((data.decisions || []).length === 0) {
+    blocks.push(bullet(text('(결정된 사항 없음)')));
+  } else {
+    for (const d of data.decisions) {
+      blocks.push(bullet(text(itemText(d))));
+    }
+  }
+
+  blocks.push(heading2('✅', 'To-do'));
+  const todoItems = (data.todos || []).length
+    ? data.todos.map((t) => ({
         object: 'block',
-        type: 'bulleted_list_item',
-        bulleted_list_item: { rich_text: text('(논의 내용 없음)') },
-      }],
-    },
-  });
+        type: 'to_do',
+        to_do: { rich_text: text(itemText(t)), checked: false },
+      }))
+    : [{
+        object: 'block',
+        type: 'to_do',
+        to_do: { rich_text: text(''), checked: false },
+      }];
+  blocks.push(...todoItems);
 
-  // 결정 사항
-  blocks.push({
-    object: 'block',
-    type: 'callout',
-    callout: {
-      icon: { type: 'emoji', emoji: '🎯' },
-      color: 'blue_background',
-      rich_text: bold('결정 사항'),
-      children: (data.decisions || []).length
-        ? bullets(data.decisions)
-        : [{
-            object: 'block',
-            type: 'bulleted_list_item',
-            bulleted_list_item: { rich_text: text('(결정된 사항 없음)') },
-          }],
-    },
-  });
-
-  // To-do
-  blocks.push({
-    object: 'block',
-    type: 'callout',
-    callout: {
-      icon: { type: 'emoji', emoji: '✅' },
-      color: 'blue_background',
-      rich_text: bold('To-do'),
-      children: (data.todos || []).length
-        ? data.todos.map((s) => ({
-            object: 'block',
-            type: 'to_do',
-            to_do: { rich_text: text(s), checked: false },
-          }))
-        : [{
-            object: 'block',
-            type: 'to_do',
-            to_do: { rich_text: text(''), checked: false },
-          }],
-    },
-  });
+  // ===== 진단 토글: 전사 원문 + 항목별 근거 인용 매핑 =====
+  const evidenceChildren = buildEvidenceBlocks(data, transcriptUpload);
+  if (evidenceChildren.length) {
+    blocks.push({ object: 'block', type: 'divider', divider: {} });
+    blocks.push({
+      object: 'block',
+      type: 'toggle',
+      toggle: {
+        rich_text: [{
+          type: 'text',
+          text: { content: '🔍 검토 자료 (전사 원문 + 항목별 근거 인용)' },
+          annotations: { color: 'gray' },
+        }],
+        children: evidenceChildren,
+      },
+    });
+  }
 
   return blocks;
+}
+
+// 진단 토글 안에 들어갈 블록들: 전사 파일 + 항목별 (text — 인용/⚠️ 근거 없음)
+function buildEvidenceBlocks(data, transcriptUpload) {
+  const text = (s) => [{ type: 'text', text: { content: s } }];
+  const bold = (s) => [{ type: 'text', text: { content: s }, annotations: { bold: true } }];
+  const heading3 = (content) => ({
+    object: 'block', type: 'heading_3', heading_3: { rich_text: text(content) },
+  });
+
+  // 본문 텍스트 + sourceQuote(있으면 회색 이탤릭, 없으면 빨간 ⚠️)를 한 줄에 묶음
+  const evidenceBullet = (mainText, quote) => {
+    const parts = [{ type: 'text', text: { content: mainText } }];
+    if (quote && quote.trim()) {
+      const truncated = quote.length > 100 ? quote.slice(0, 100) + '…' : quote;
+      parts.push({
+        type: 'text',
+        text: { content: `  「${truncated}」` },
+        annotations: { italic: true, color: 'gray' },
+      });
+    } else {
+      parts.push({
+        type: 'text',
+        text: { content: '  ⚠️ 근거 없음 (환각/추정 의심)' },
+        annotations: { italic: true, color: 'red' },
+      });
+    }
+    return {
+      object: 'block', type: 'bulleted_list_item',
+      bulleted_list_item: { rich_text: parts },
+    };
+  };
+
+  const blocks = [];
+
+  if (transcriptUpload) {
+    blocks.push({
+      object: 'block', type: 'file',
+      file: {
+        type: 'file_upload',
+        file_upload: { id: transcriptUpload.id },
+        caption: [{
+          type: 'text',
+          text: { content: `회의 전사 원문 (${transcriptUpload.charCount.toLocaleString()}자)` },
+        }],
+      },
+    });
+  }
+
+  if ((data.decisions || []).length) {
+    blocks.push(heading3('🎯 결정 사항 — 근거 인용'));
+    for (const d of data.decisions) {
+      blocks.push(evidenceBullet(itemText(d), itemQuote(d)));
+    }
+  }
+
+  if ((data.todos || []).length) {
+    blocks.push(heading3('✅ To-do — 근거 인용'));
+    for (const td of data.todos) {
+      blocks.push(evidenceBullet(itemText(td), itemQuote(td)));
+    }
+  }
+
+  if ((data.discussion || []).length) {
+    blocks.push(heading3('💬 논의 사항 — 근거 인용'));
+    for (const disc of data.discussion) {
+      blocks.push({
+        object: 'block', type: 'paragraph',
+        paragraph: { rich_text: bold(disc.topic) },
+      });
+      for (const p of disc.points || []) {
+        blocks.push(evidenceBullet(itemText(p), itemQuote(p)));
+      }
+    }
+  }
+
+  return blocks;
+}
+
+// 전사 원문 파일명 (upload-to-notion.js와 동일 로직)
+function buildTranscriptFilename(title, date) {
+  const safe = (title || 'untitled')
+    .replace(/[\\/:*?"<>|]/g, '')
+    .replace(/\s+/g, '_')
+    .slice(0, 80);
+  return `전사원문_${date}_${safe}.txt`;
+}
+
+// Notion File Upload API (single_part). transcriptText를 업로드 후 file_upload id 반환.
+// 실패 시 throw — handleFinalizeNotion이 catch해서 첨부 없이 진행함.
+async function uploadTranscriptToNotion(transcriptText, filename) {
+  const NOTION_VERSION = '2022-06-28';
+  const token = process.env.NOTION_TOKEN;
+
+  const createResp = await fetch('https://api.notion.com/v1/file_uploads', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Notion-Version': NOTION_VERSION,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      mode: 'single_part',
+      filename,
+      content_type: 'text/plain',
+    }),
+  });
+  if (!createResp.ok) {
+    const errText = await createResp.text();
+    throw new Error(`file_upload create failed (HTTP ${createResp.status}): ${errText.slice(0, 300)}`);
+  }
+  const createData = await createResp.json();
+
+  const form = new FormData();
+  form.append('file', new Blob([transcriptText], { type: 'text/plain;charset=utf-8' }), filename);
+
+  const sendUrl = createData.upload_url || `https://api.notion.com/v1/file_uploads/${createData.id}/send`;
+  const sendResp = await fetch(sendUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Notion-Version': NOTION_VERSION,
+    },
+    body: form,
+  });
+  if (!sendResp.ok) {
+    const errText = await sendResp.text();
+    throw new Error(`file_upload send failed (HTTP ${sendResp.status}): ${errText.slice(0, 300)}`);
+  }
+
+  return createData.id;
 }
 
 // ------- 용어집 조회 -------

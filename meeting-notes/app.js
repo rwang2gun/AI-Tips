@@ -1,7 +1,8 @@
 // 회의록 자동 생성기 — 클라이언트 로직
-// MediaRecorder로 녹음 → 청크 분할 업로드 → /api/process-meeting 처리
+// MediaRecorder로 5분 단위 세그먼트 녹음 → 세그먼트별 처리 → /api/process-meeting
 
 const MAX_CHUNK_SIZE = 3.5 * 1024 * 1024; // 3.5MB (Vercel 4.5MB 한도 여유)
+const SEGMENT_SECONDS = 300; // 5분. 단일 Gemini 전사 호출이 60초 안에 끝나는 안전 기준치
 
 const els = {
   recBtn: document.getElementById('recBtn'),
@@ -26,12 +27,18 @@ const els = {
 
 let mediaRecorder = null;
 let stream = null;
-let audioChunks = [];
+let audioChunks = []; // 현재 세그먼트의 ondataavailable 청크
 let startedAt = 0;
 let timerInterval = null;
 let audioCtx = null;
 let analyser = null;
 let vizFrame = null;
+let segments = []; // { index, blob } 누적 — 5분마다 blob 하나씩 추가
+let segmentIndex = 0;
+let segmentTimeout = null;
+let stopRequested = false; // 사용자 종료 요청 플래그
+let recorderMimeType = '';
+let recorderOpts = null;
 
 function fmtTime(sec) {
   const m = Math.floor(sec / 60).toString().padStart(2, '0');
@@ -73,26 +80,18 @@ async function startRecording() {
   source.connect(analyser);
   drawVisualizer();
 
-  // MediaRecorder 시작 (브라우저별 호환 코덱 시도)
+  // MediaRecorder 옵션 (모든 세그먼트 공통)
   const mimeOptions = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'];
-  const mimeType = mimeOptions.find((m) => MediaRecorder.isTypeSupported(m)) || '';
-  const opts = mimeType ? { mimeType, audioBitsPerSecond: 32000 } : { audioBitsPerSecond: 32000 };
+  recorderMimeType = mimeOptions.find((m) => MediaRecorder.isTypeSupported(m)) || '';
+  recorderOpts = recorderMimeType
+    ? { mimeType: recorderMimeType, audioBitsPerSecond: 32000 }
+    : { audioBitsPerSecond: 32000 };
 
-  mediaRecorder = new MediaRecorder(stream, opts);
-  audioChunks = [];
-
-  mediaRecorder.ondataavailable = (e) => {
-    if (e.data.size > 0) audioChunks.push(e.data);
-  };
-
-  mediaRecorder.onstop = async () => {
-    stopVisualizer();
-    const blob = new Blob(audioChunks, { type: mimeType || 'audio/webm' });
-    await processMeeting(blob);
-  };
-
-  mediaRecorder.start(1000); // 1초마다 데이터 fire
+  segments = [];
+  segmentIndex = 0;
+  stopRequested = false;
   startedAt = Date.now();
+
   els.timer.textContent = '00:00';
   timerInterval = setInterval(() => {
     const elapsed = (Date.now() - startedAt) / 1000;
@@ -102,19 +101,76 @@ async function startRecording() {
   els.recBtn.classList.add('recording');
   els.recLabel.textContent = '녹음 종료';
   setStatus('녹음 중', true);
-  els.hint.textContent = '한 번 더 누르면 종료되고 자동으로 회의록이 생성됩니다';
+  els.hint.textContent = `한 번 더 누르면 종료되고 자동으로 회의록이 생성됩니다 (${SEGMENT_SECONDS / 60}분 단위로 분할 저장)`;
+
+  startSegmentRecorder();
+}
+
+// 세그먼트 하나를 녹음. 자동 stop 후 다음 세그먼트 시작 또는 finalize 진입.
+function startSegmentRecorder() {
+  audioChunks = [];
+  mediaRecorder = new MediaRecorder(stream, recorderOpts);
+
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data.size > 0) audioChunks.push(e.data);
+  };
+
+  mediaRecorder.onstop = () => {
+    if (segmentTimeout) {
+      clearTimeout(segmentTimeout);
+      segmentTimeout = null;
+    }
+    if (audioChunks.length) {
+      const blob = new Blob(audioChunks, { type: recorderMimeType || 'audio/webm' });
+      segments.push({ index: segmentIndex, blob });
+      segmentIndex++;
+    }
+    if (stopRequested) {
+      finalizeRecording();
+    } else {
+      // 다음 세그먼트 즉시 시작 (stop/start 사이 수십~수백ms 음성 누락 가능 — 5분 세그먼트에선 허용 범위)
+      startSegmentRecorder();
+    }
+  };
+
+  mediaRecorder.start(1000); // 1초마다 데이터 fire
+
+  // SEGMENT_SECONDS 후 자동 stop → onstop이 다음 세그먼트 트리거
+  segmentTimeout = setTimeout(() => {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+    }
+  }, SEGMENT_SECONDS * 1000);
 }
 
 function stopRecording() {
-  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-    mediaRecorder.stop();
+  stopRequested = true;
+  if (segmentTimeout) {
+    clearTimeout(segmentTimeout);
+    segmentTimeout = null;
   }
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop(); // onstop → finalizeRecording()
+  } else {
+    finalizeRecording();
+  }
+}
+
+function finalizeRecording() {
+  stopVisualizer();
   if (stream) stream.getTracks().forEach((t) => t.stop());
-  if (audioCtx) audioCtx.close();
+  if (audioCtx) audioCtx.close().catch(() => {});
   if (timerInterval) clearInterval(timerInterval);
 
   els.recBtn.classList.remove('recording');
   els.recLabel.textContent = '녹음 시작';
+
+  if (!segments.length) {
+    showError('녹음된 오디오가 없습니다. 다시 시도해주세요.');
+    return;
+  }
+
+  processMeeting(segments);
 }
 
 function drawVisualizer() {
@@ -151,109 +207,105 @@ function stopVisualizer() {
   if (vizFrame) cancelAnimationFrame(vizFrame);
 }
 
-async function processMeeting(blob) {
+async function processMeeting(segs) {
   showSection('processing');
-  els.processingText.textContent = '오디오 업로드 중...';
+
+  const sessionId = crypto.randomUUID();
+  const totalSegments = segs.length;
 
   try {
-    const sessionId = crypto.randomUUID();
-    const totalChunks = Math.ceil(blob.size / MAX_CHUNK_SIZE);
+    // 세그먼트별 파이프라인: upload → prepare-segment → poll → transcribe-segment
+    for (const seg of segs) {
+      const segLabel = `${seg.index + 1}/${totalSegments}`;
 
-    // 청크 분할 업로드
-    for (let i = 0; i < totalChunks; i++) {
-      const chunk = blob.slice(i * MAX_CHUNK_SIZE, (i + 1) * MAX_CHUNK_SIZE);
-      els.processingText.textContent = `업로드 중 (${i + 1}/${totalChunks})...`;
+      // 1) 청크 분할 업로드 (segment 단위 폴더)
+      const totalChunks = Math.ceil(seg.blob.size / MAX_CHUNK_SIZE);
+      for (let i = 0; i < totalChunks; i++) {
+        const chunk = seg.blob.slice(i * MAX_CHUNK_SIZE, (i + 1) * MAX_CHUNK_SIZE);
+        els.processingText.textContent = `세그먼트 ${segLabel} 업로드 (${i + 1}/${totalChunks})...`;
 
-      const res = await fetch('/api/process-meeting', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/octet-stream',
-          'X-Action': 'upload-chunk',
-          'X-Session-Id': sessionId,
-          'X-Chunk-Index': String(i),
-          'X-Total-Chunks': String(totalChunks),
-          'X-Mime-Type': blob.type,
-        },
-        body: chunk,
-      });
+        const res = await fetch('/api/process-meeting', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'X-Action': 'upload-chunk',
+            'X-Session-Id': sessionId,
+            'X-Segment-Index': String(seg.index),
+            'X-Chunk-Index': String(i),
+            'X-Total-Chunks': String(totalChunks),
+            'X-Mime-Type': seg.blob.type,
+          },
+          body: chunk,
+        });
 
-      if (!res.ok) {
-        const err = await res.text();
-        throw new Error(`업로드 실패 (chunk ${i + 1}): ${err}`);
+        if (!res.ok) {
+          throw new Error(`업로드 실패 (세그먼트 ${segLabel}, chunk ${i + 1}): ${await res.text()}`);
+        }
       }
-    }
 
-    // 1) prepare — 청크 결합 + Gemini Files API 업로드
-    els.processingText.textContent = '오디오 준비 중...';
-    const prepRes = await fetch('/api/process-meeting', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Action': 'prepare',
-      },
-      body: JSON.stringify({
-        sessionId,
-        mimeType: blob.type,
-      }),
-    });
-
-    if (!prepRes.ok) {
-      const err = await prepRes.text();
-      throw new Error(`준비 실패: ${err}`);
-    }
-
-    const prepData = await prepRes.json();
-
-    // 2) check-file — Gemini 파일이 ACTIVE 될 때까지 폴링
-    let fileState = prepData.state;
-    let fileUri = prepData.fileUri;
-    let fileMimeType = prepData.fileMimeType;
-    const maxPolls = 60; // 최대 2분 (2초 간격)
-    for (let i = 0; i < maxPolls && fileState === 'PROCESSING'; i++) {
-      els.processingText.textContent = `AI 파일 처리 중... (${i + 1}/${maxPolls})`;
-      await new Promise((r) => setTimeout(r, 2000));
-      const chkRes = await fetch('/api/process-meeting', {
+      // 2) prepare-segment — 청크 결합 + Gemini Files API 업로드
+      els.processingText.textContent = `세그먼트 ${segLabel} 준비 중...`;
+      const prepRes = await fetch('/api/process-meeting', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Action': 'check-file',
-        },
-        body: JSON.stringify({ fileName: prepData.fileName }),
+        headers: { 'Content-Type': 'application/json', 'X-Action': 'prepare-segment' },
+        body: JSON.stringify({ sessionId, segmentIndex: seg.index, mimeType: seg.blob.type }),
       });
-      if (!chkRes.ok) {
-        const err = await chkRes.text();
-        throw new Error(`파일 상태 확인 실패: ${err}`);
+      if (!prepRes.ok) throw new Error(`세그먼트 ${segLabel} 준비 실패: ${await prepRes.text()}`);
+      const prepData = await prepRes.json();
+
+      // 3) check-file 폴링 — Gemini 파일 ACTIVE 대기
+      let fileState = prepData.state;
+      let fileUri = prepData.fileUri;
+      let fileMimeType = prepData.fileMimeType;
+      const maxPolls = 60; // 최대 2분
+      for (let i = 0; i < maxPolls && fileState === 'PROCESSING'; i++) {
+        els.processingText.textContent = `세그먼트 ${segLabel} AI 처리 중... (${i + 1}/${maxPolls})`;
+        await new Promise((r) => setTimeout(r, 2000));
+        const chkRes = await fetch('/api/process-meeting', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Action': 'check-file' },
+          body: JSON.stringify({ fileName: prepData.fileName }),
+        });
+        if (!chkRes.ok) throw new Error(`세그먼트 ${segLabel} 상태 확인 실패: ${await chkRes.text()}`);
+        const chkData = await chkRes.json();
+        fileState = chkData.state;
+        fileUri = chkData.fileUri || fileUri;
+        fileMimeType = chkData.fileMimeType || fileMimeType;
       }
-      const chkData = await chkRes.json();
-      fileState = chkData.state;
-      fileUri = chkData.fileUri || fileUri;
-      fileMimeType = chkData.fileMimeType || fileMimeType;
+      if (fileState !== 'ACTIVE') {
+        throw new Error(`세그먼트 ${segLabel} Gemini 상태: ${fileState}`);
+      }
+
+      // 4) transcribe-segment — 5분 오디오 → transcript-NN.txt
+      els.processingText.textContent = `세그먼트 ${segLabel} 전사 중...`;
+      const trRes = await fetch('/api/process-meeting', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Action': 'transcribe-segment' },
+        body: JSON.stringify({
+          sessionId,
+          segmentIndex: seg.index,
+          fileUri,
+          fileMimeType,
+          totalSegments,
+        }),
+      });
+      if (!trRes.ok) throw new Error(`세그먼트 ${segLabel} 전사 실패: ${await trRes.text()}`);
     }
 
-    if (fileState !== 'ACTIVE') {
-      throw new Error(`Gemini 파일 상태: ${fileState}`);
-    }
-
-    // 3) transcribe — 오디오 → 한국어 전사문 (Blob에 저장)
-    els.processingText.textContent = 'AI가 회의 내용을 받아적는 중...';
-    const trRes = await fetch('/api/process-meeting', {
+    // 5) merge-transcripts — transcript-NN.txt 전체 결합 → transcript.txt
+    els.processingText.textContent = '전사문 병합 중...';
+    const mrgRes = await fetch('/api/process-meeting', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Action': 'transcribe',
-      },
-      body: JSON.stringify({ sessionId, fileUri, fileMimeType }),
+      headers: { 'Content-Type': 'application/json', 'X-Action': 'merge-transcripts' },
+      body: JSON.stringify({ sessionId, totalSegments }),
     });
-    if (!trRes.ok) throw new Error(`전사 실패: ${await trRes.text()}`);
+    if (!mrgRes.ok) throw new Error(`전사문 병합 실패: ${await mrgRes.text()}`);
 
-    // 4) summarize — 전사문 → 구조화 JSON 요약 (Blob에 저장)
+    // 6) summarize — 전사문 → 구조화 JSON 요약
     els.processingText.textContent = '회의록 요약 중...';
     const sumRes = await fetch('/api/process-meeting', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Action': 'summarize',
-      },
+      headers: { 'Content-Type': 'application/json', 'X-Action': 'summarize' },
       body: JSON.stringify({
         sessionId,
         title: els.meetingTitle.value || null,
@@ -263,14 +315,11 @@ async function processMeeting(blob) {
     });
     if (!sumRes.ok) throw new Error(`요약 실패: ${await sumRes.text()}`);
 
-    // 5) finalize-notion — Notion 페이지 생성 + 세션 폴더 정리
+    // 7) finalize-notion — Notion 페이지 생성 + 세션 폴더 정리
     els.processingText.textContent = 'Notion에 저장 중...';
     const res = await fetch('/api/process-meeting', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Action': 'finalize-notion',
-      },
+      headers: { 'Content-Type': 'application/json', 'X-Action': 'finalize-notion' },
       body: JSON.stringify({ sessionId }),
     });
     if (!res.ok) throw new Error(`Notion 저장 실패: ${await res.text()}`);
