@@ -3,7 +3,7 @@
 // ============================================================
 //
 // [흐름]
-//   클라이언트(meeting-notes/app.js)에서 네 단계로 호출:
+//   클라이언트(meeting-notes/app.js)에서 여섯 단계로 호출:
 //   1. upload-chunk (X-Action 헤더)
 //      → 오디오 청크(3.5MB 이하)를 Vercel Blob에 임시 저장
 //      → 1시간 녹음 ≈ 14MB → 4청크로 분할 업로드
@@ -12,16 +12,22 @@
 //      → 파일 URI 반환 (ACTIVE 대기는 클라이언트에서 폴링)
 //   3. check-file (X-Action 헤더)
 //      → Gemini 파일 처리 상태 확인 (클라이언트가 주기적 호출)
-//   4. finalize (X-Action 헤더)
-//      → Gemini 2.5 Flash로 한국어 전사 + 구조화 JSON 추출
-//      → Notion API로 "자동 회의록 DB"에 페이지 생성
-//      → Vercel Blob 청크 정리
+//   4. transcribe (X-Action 헤더)
+//      → Gemini 2.5 Flash로 한국어 전사문 생성
+//      → transcript.txt로 Vercel Blob에 저장
+//   5. summarize (X-Action 헤더)
+//      → 전사문 읽어 Gemini에 보내 구조화 JSON 추출
+//      → result.json으로 Blob에 저장
+//   6. finalize-notion (X-Action 헤더)
+//      → result.json 읽어 Notion 페이지 생성
+//      → Blob 세션 폴더 전체 정리
 //
 // [단계 분할 이유]
-//   Vercel Hobby 함수는 60초 실행 한도. 70분짜리 회의는 결합+업로드+폴링+
-//   Gemini 생성+Notion 생성을 한 호출에 담으면 FUNCTION_INVOCATION_TIMEOUT.
-//   prepare(결합+업로드) · check-file(폴링) · finalize(생성+Notion)로 쪼개면
-//   각 호출이 60초 안에 안전하게 끝남.
+//   Vercel Hobby 함수는 60초 실행 한도. 긴 회의는 단일 Gemini 호출
+//   (오디오→JSON)이 50~60초 이상 소요되어 FUNCTION_INVOCATION_TIMEOUT.
+//   전사 단계(오디오→텍스트)와 요약 단계(텍스트→JSON)로 분리하면
+//   각 Gemini 호출이 짧아져 타임아웃 회피 + 전사본이 중간 산출물로 남아
+//   요약 실패 시 재전사 불필요.
 //
 // [핵심 설계 결정]
 //   - 청크 3.5MB 분할: Vercel Hobby 4.5MB 본문 한도 때문
@@ -104,8 +110,14 @@ export default async function handler(req, res) {
     if (action === 'check-file') {
       return await handleCheckFile(req, res);
     }
-    if (action === 'finalize') {
-      return await handleFinalize(req, res);
+    if (action === 'transcribe') {
+      return await handleTranscribe(req, res);
+    }
+    if (action === 'summarize') {
+      return await handleSummarize(req, res);
+    }
+    if (action === 'finalize-notion') {
+      return await handleFinalizeNotion(req, res);
     }
     return jsonResponse(res, 400, { error: 'Unknown X-Action' });
   } catch (err) {
@@ -211,11 +223,11 @@ async function handleCheckFile(req, res) {
   });
 }
 
-// ------- 3단계: Gemini 전사/요약 + Notion 페이지 생성 -------
+// ------- 3단계: Gemini 오디오 → 한국어 전사문 -------
 
-async function handleFinalize(req, res) {
+async function handleTranscribe(req, res) {
   const body = await readJsonBody(req);
-  const { sessionId, fileUri, fileMimeType, title, meetingType, durationSec } = body;
+  const { sessionId, fileUri, fileMimeType } = body;
 
   if (!sessionId || !/^[0-9a-f-]{36}$/i.test(sessionId)) {
     return jsonResponse(res, 400, { error: 'Invalid session id' });
@@ -224,38 +236,16 @@ async function handleFinalize(req, res) {
     return jsonResponse(res, 400, { error: 'Missing fileUri/fileMimeType' });
   }
 
-  const prefix = `meetings/${sessionId}/`;
   const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-  // Notion 용어집 조회
-  const glossaryText = await fetchGlossary();
+  const promptText = `첨부된 한국어 회의 녹음을 정확히 전사하세요.
 
-  // Gemini 호출 — 구조화된 JSON으로 회의록 추출
-  const today = new Date().toISOString().slice(0, 10);
-  const meetingMeta = {
-    requestedTitle: title,
-    requestedMeetingType: meetingType,
-    durationSec,
-    date: today,
-  };
-
-  const promptText = `당신은 게임 기획 회의록 정리 전문가입니다. 첨부된 한국어 회의 녹음을 듣고 회의록을 작성하세요.
-
-[메타 정보]
-${JSON.stringify(meetingMeta, null, 2)}
-${glossaryText}
-[작성 규칙]
-1. 모든 응답은 한국어로 작성
-2. 발언자 구분은 하지 않고 내용 중심으로 정리
-3. 게임 기획 관련 회의일 가능성이 높음 (전투, 시스템, 밸런스, UI 등의 용어 자주 등장)
-4. 위 용어집에 있는 단어가 음성에서 들리면 반드시 해당 표기를 사용할 것
-5. requestedTitle이 있으면 그것을 title로 사용. 없으면 회의 내용을 요약한 30자 이내 제목 생성
-6. requestedMeetingType이 있으면 그것을 meetingType으로 사용. 없으면 내용에 맞게 선택
-7. labels는 회의에서 다룬 주제에 해당하는 것만 (없으면 빈 배열)
-8. agenda: 회의 시작 시 명시적으로 다룬 안건. 없으면 빈 배열
-9. discussion: 실제 오간 논의 (가장 중요)
-10. decisions: 명확히 합의/결정된 사항만
-11. todos: 누가 무엇을 언제까지 할지 명시된 액션 아이템`;
+[규칙]
+1. 들리는 내용을 누락 없이 옮겨 쓸 것
+2. 발언자 구분은 하지 말고 발언 순서대로 작성
+3. "음", "어" 같은 군더더기는 생략하되 실제 의미 있는 말은 모두 포함
+4. 잘 안 들리는 구간은 [불분명] 으로 표시
+5. 문장 단위로 줄바꿈하여 가독성 확보`;
 
   const result = await genAI.models.generateContent({
     model: 'gemini-2.5-flash',
@@ -265,6 +255,88 @@ ${glossaryText}
         createPartFromUri(fileUri, fileMimeType),
       ]),
     ],
+  });
+
+  const transcript = result.text || '';
+  if (!transcript.trim()) {
+    return jsonResponse(res, 500, { error: 'Empty transcript from Gemini' });
+  }
+
+  // 전사문을 Blob에 저장 (다음 단계 summarize에서 읽음)
+  await put(`meetings/${sessionId}/transcript.txt`, transcript, {
+    access: 'public',
+    contentType: 'text/plain; charset=utf-8',
+    addRandomSuffix: false,
+    allowOverwrite: true,
+  });
+
+  return jsonResponse(res, 200, {
+    ok: true,
+    transcriptLength: transcript.length,
+  });
+}
+
+// ------- 4단계: 전사문 → 구조화 JSON 요약 -------
+
+async function handleSummarize(req, res) {
+  const body = await readJsonBody(req);
+  const { sessionId, title, meetingType, durationSec } = body;
+
+  if (!sessionId || !/^[0-9a-f-]{36}$/i.test(sessionId)) {
+    return jsonResponse(res, 400, { error: 'Invalid session id' });
+  }
+
+  // Blob에서 전사문 가져오기
+  const transcriptKey = `meetings/${sessionId}/transcript.txt`;
+  const { blobs } = await list({ prefix: transcriptKey });
+  const transcriptBlob = blobs.find((b) => b.pathname === transcriptKey);
+  if (!transcriptBlob) {
+    return jsonResponse(res, 400, { error: 'No transcript found — run transcribe first' });
+  }
+
+  const transcriptRes = await fetch(transcriptBlob.url);
+  const transcript = await transcriptRes.text();
+
+  if (!transcript.trim()) {
+    return jsonResponse(res, 400, { error: 'Empty transcript' });
+  }
+
+  // Notion 용어집 조회
+  const glossaryText = await fetchGlossary();
+
+  const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const today = new Date().toISOString().slice(0, 10);
+  const meetingMeta = {
+    requestedTitle: title,
+    requestedMeetingType: meetingType,
+    durationSec,
+    date: today,
+  };
+
+  const promptText = `당신은 게임 기획 회의록 정리 전문가입니다. 아래 한국어 회의 전사문을 바탕으로 회의록을 작성하세요.
+
+[메타 정보]
+${JSON.stringify(meetingMeta, null, 2)}
+${glossaryText}
+[전사문]
+${transcript}
+
+[작성 규칙]
+1. 모든 응답은 한국어로 작성
+2. 발언자 구분은 하지 않고 내용 중심으로 정리
+3. 게임 기획 관련 회의일 가능성이 높음 (전투, 시스템, 밸런스, UI 등의 용어 자주 등장)
+4. 위 용어집에 있는 단어가 전사문에 있으면 반드시 해당 표기를 사용할 것
+5. requestedTitle이 있으면 그것을 title로 사용. 없으면 전사문을 요약한 30자 이내 제목 생성
+6. requestedMeetingType이 있으면 그것을 meetingType으로 사용. 없으면 내용에 맞게 선택
+7. labels는 회의에서 다룬 주제에 해당하는 것만 (없으면 빈 배열)
+8. agenda: 회의 시작 시 명시적으로 다룬 안건. 없으면 빈 배열
+9. discussion: 실제 오간 논의 (가장 중요)
+10. decisions: 명확히 합의/결정된 사항만
+11. todos: 누가 무엇을 언제까지 할지 명시된 액션 아이템`;
+
+  const result = await genAI.models.generateContent({
+    model: 'gemini-2.5-flash',
+    contents: [createUserContent([promptText])],
     config: {
       responseMimeType: 'application/json',
       responseSchema: meetingSchema(),
@@ -273,10 +345,46 @@ ${glossaryText}
 
   const meetingData = JSON.parse(result.text);
 
-  // Notion 페이지 생성
-  const notionUrl = await createNotionPage(meetingData, today);
+  // 결과 JSON을 Blob에 저장 (다음 단계 finalize-notion에서 읽음)
+  const payload = { meetingData, date: today };
+  await put(`meetings/${sessionId}/result.json`, JSON.stringify(payload), {
+    access: 'public',
+    contentType: 'application/json',
+    addRandomSuffix: false,
+    allowOverwrite: true,
+  });
 
-  // 청크 정리 (Gemini 파일은 48시간 후 자동 삭제됨)
+  return jsonResponse(res, 200, {
+    ok: true,
+    title: meetingData.title,
+  });
+}
+
+// ------- 5단계: Notion 페이지 생성 + 세션 폴더 정리 -------
+
+async function handleFinalizeNotion(req, res) {
+  const body = await readJsonBody(req);
+  const { sessionId } = body;
+
+  if (!sessionId || !/^[0-9a-f-]{36}$/i.test(sessionId)) {
+    return jsonResponse(res, 400, { error: 'Invalid session id' });
+  }
+
+  const prefix = `meetings/${sessionId}/`;
+  const resultKey = `meetings/${sessionId}/result.json`;
+  const { blobs } = await list({ prefix: resultKey });
+  const resultBlob = blobs.find((b) => b.pathname === resultKey);
+  if (!resultBlob) {
+    return jsonResponse(res, 400, { error: 'No summary result found — run summarize first' });
+  }
+
+  const r = await fetch(resultBlob.url);
+  const { meetingData, date } = await r.json();
+
+  // Notion 페이지 생성
+  const notionUrl = await createNotionPage(meetingData, date);
+
+  // 청크 + 전사 + 결과 파일 모두 정리 (Gemini 파일은 48시간 후 자동 삭제됨)
   await cleanupChunks(prefix);
 
   return jsonResponse(res, 200, {
