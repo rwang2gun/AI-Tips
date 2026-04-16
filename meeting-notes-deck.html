@@ -526,6 +526,13 @@ p{font-size:clamp(16px,2vw,20px);color:var(--text-muted);line-height:1.7;text-al
         <div class="tl-result">→ HANDOFF.md 인계 문서 작성 (세션 간 컨텍스트 유지)</div>
       </div>
     </div>
+    <div class="tl-item">
+      <div class="tl-num">10</div>
+      <div class="tl-content">
+        <div class="tl-ask">"용어집 같은 게 있으면 도움이 돼?"</div>
+        <div class="tl-result">→ Notion 용어집 DB 생성 + Gemini 프롬프트 자동 삽입</div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -590,11 +597,54 @@ p{font-size:clamp(16px,2vw,20px);color:var(--text-muted);line-height:1.7;text-al
         <span>HANDOFF.md로 웹/PC Claude 연속 작업</span>
       </div>
     </div>
+    <div class="feat-item">
+      <div class="feat-check">⭐</div>
+      <div class="feat-text">
+        <strong>Notion 용어집 연동</strong>
+        <span>게임 용어 DB → 프롬프트 자동 삽입. 코드 수정 없이 용어 추가/편집</span>
+      </div>
+    </div>
+    <div class="feat-item">
+      <div class="feat-check">✅</div>
+      <div class="feat-text">
+        <strong>Gemini 유료 티어 전환</strong>
+        <span>카드 등록만으로 데이터 학습 제외 보장</span>
+      </div>
+    </div>
   </div>
 </div>
 
-<!-- ===== 8. RESULT ===== -->
+<!-- ===== 8. GLOSSARY — 차별화 기능 ===== -->
 <div class="slide" data-index="7">
+  <div class="tag">Differentiator</div>
+  <h2>차별화 — Notion 용어집 연동</h2>
+  <p style="margin-bottom:20px">다른 회의록 앱에는 없는 기능.<br>Notion에서 용어를 관리하면 AI가 자동으로 정확한 표기를 사용합니다.</p>
+  <div class="future-compare" style="max-width:720px">
+    <div class="future-card current">
+      <h3><span class="dot"></span>일반 회의록 앱</h3>
+      <div class="future-step"><span class="fs-icon">🎤</span>"어그로 수치를 조정..."</div>
+      <div class="future-step"><span class="fs-icon">❌</span>"아그로 수치를 조정..."</div>
+      <div class="future-step"><span class="fs-icon">❌</span>전문 용어 오인식 빈번</div>
+      <div class="future-step"><span class="fs-icon">🔒</span>수정하려면 직접 편집</div>
+    </div>
+    <div class="future-arrow">→</div>
+    <div class="future-card next">
+      <h3><span class="dot"></span>우리 앱 (용어집 연동)</h3>
+      <div class="future-step"><span class="fs-icon">🎤</span>"어그로 수치를 조정..."</div>
+      <div class="future-step"><span class="fs-icon">✅</span>"어그로 수치를 조정..."</div>
+      <div class="future-step"><span class="fs-icon">📝</span>Notion DB에서 용어 관리</div>
+      <div class="future-step"><span class="fs-icon">🔄</span>추가/편집 즉시 반영 (코드 수정 X)</div>
+    </div>
+  </div>
+  <div class="future-benefit">
+    <div class="future-chip">프로젝트별 용어 등록</div>
+    <div class="future-chip">체크박스로 ON/OFF</div>
+    <div class="future-chip">현재 18개 게임 용어 등록됨</div>
+  </div>
+</div>
+
+<!-- ===== 9. RESULT ===== -->
+<div class="slide" data-index="8">
   <div class="tag">Result</div>
   <h2>실제 결과물 — Notion 회의록</h2>
   <div class="result-mock">
@@ -632,8 +682,8 @@ p{font-size:clamp(16px,2vw,20px);color:var(--text-muted);line-height:1.7;text-al
   </div>
 </div>
 
-<!-- ===== 9. DECISIONS ===== -->
-<div class="slide" data-index="8">
+<!-- ===== 10. DECISIONS ===== -->
+<div class="slide" data-index="9">
   <div class="tag">Why?</div>
   <h2>핵심 기술 결정</h2>
   <div class="decision-grid">
@@ -660,8 +710,8 @@ p{font-size:clamp(16px,2vw,20px);color:var(--text-muted);line-height:1.7;text-al
   </div>
 </div>
 
-<!-- ===== 10. LEARNINGS ===== -->
-<div class="slide" data-index="9">
+<!-- ===== 11. LEARNINGS ===== -->
+<div class="slide" data-index="10">
   <div class="tag">Takeaway</div>
   <h2>배운 점 & 한계</h2>
   <div class="learn-cols">
@@ -680,8 +730,8 @@ p{font-size:clamp(16px,2vw,20px);color:var(--text-muted);line-height:1.7;text-al
   </div>
 </div>
 
-<!-- ===== 11. NEXT — Claude Enterprise ===== -->
-<div class="slide" data-index="10">
+<!-- ===== 12. NEXT — Claude Enterprise ===== -->
+<div class="slide" data-index="11">
   <div class="tag">Next Step</div>
   <h2>5월부터 — Claude Enterprise 전환</h2>
   <div class="future-compare">
@@ -711,8 +761,8 @@ p{font-size:clamp(16px,2vw,20px);color:var(--text-muted);line-height:1.7;text-al
   </div>
 </div>
 
-<!-- ===== 12. CLOSING ===== -->
-<div class="slide" data-index="11">
+<!-- ===== 13. CLOSING ===== -->
+<div class="slide" data-index="12">
   <div class="cover-icon">🙋</div>
   <h2>감사합니다</h2>
   <p>질문 받겠습니다</p>
@@ -765,6 +815,7 @@ const slideMeta = [
   { title: '대화형 개발 과정', tag: 'Claude Code' },
   { title: '대화형 개발 과정 (계속)', tag: 'Claude Code' },
   { title: '내가 요청한 기능들', tag: 'Features' },
+  { title: '차별화 — 용어집 연동', tag: 'Differentiator' },
   { title: '실제 결과물 — Notion 회의록', tag: 'Result' },
   { title: '핵심 기술 결정', tag: 'Why?' },
   { title: '배운 점 & 한계', tag: 'Takeaway' },
