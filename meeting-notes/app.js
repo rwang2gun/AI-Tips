@@ -234,28 +234,46 @@ async function processMeeting(blob) {
       throw new Error(`Gemini 파일 상태: ${fileState}`);
     }
 
-    // 3) finalize — Gemini 전사/요약 + Notion 페이지 생성
-    els.processingText.textContent = 'AI가 회의록을 작성 중...';
-    const res = await fetch('/api/process-meeting', {
+    // 3) transcribe — 오디오 → 한국어 전사문 (Blob에 저장)
+    els.processingText.textContent = 'AI가 회의 내용을 받아적는 중...';
+    const trRes = await fetch('/api/process-meeting', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Action': 'finalize',
+        'X-Action': 'transcribe',
+      },
+      body: JSON.stringify({ sessionId, fileUri, fileMimeType }),
+    });
+    if (!trRes.ok) throw new Error(`전사 실패: ${await trRes.text()}`);
+
+    // 4) summarize — 전사문 → 구조화 JSON 요약 (Blob에 저장)
+    els.processingText.textContent = '회의록 요약 중...';
+    const sumRes = await fetch('/api/process-meeting', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Action': 'summarize',
       },
       body: JSON.stringify({
         sessionId,
-        fileUri,
-        fileMimeType,
         title: els.meetingTitle.value || null,
         meetingType: els.meetingType.value || null,
         durationSec: Math.floor((Date.now() - startedAt) / 1000),
       }),
     });
+    if (!sumRes.ok) throw new Error(`요약 실패: ${await sumRes.text()}`);
 
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`처리 실패: ${err}`);
-    }
+    // 5) finalize-notion — Notion 페이지 생성 + 세션 폴더 정리
+    els.processingText.textContent = 'Notion에 저장 중...';
+    const res = await fetch('/api/process-meeting', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Action': 'finalize-notion',
+      },
+      body: JSON.stringify({ sessionId }),
+    });
+    if (!res.ok) throw new Error(`Notion 저장 실패: ${await res.text()}`);
 
     const data = await res.json();
     showResult(data);
