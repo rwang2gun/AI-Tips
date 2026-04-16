@@ -14,7 +14,13 @@
 //        NOTION_GLOSSARY_DB_ID=...     (없으면 용어집 없이 요약)
 //
 //   2) 실행:
-//        node --env-file=.env scripts/process-recording-locally.js <audio-file> [--title "..."] [--type "킥오프|내부 논의|실무 논의|기타"]
+//        node --env-file=.env scripts/process-recording-locally.js <audio-file> [--title "..."] [--type "킥오프|내부 논의|실무 논의|기타"] [--summarize-model=gemini-2.5-pro]
+//
+//   [모델 전략]
+//     - 전사 (Step 1): gemini-2.5-flash (저렴 + 단순 작업에 충분)
+//     - 요약 (Step 2): gemini-2.5-pro (긴 입력 + structured output에서
+//       Flash는 503 UNAVAILABLE 지속 반환하므로 Pro 기본값)
+//     - --summarize-model=gemini-2.5-flash 로 요약도 Flash 강제 가능
 //
 //      또는:
 //        export GEMINI_API_KEY=... NOTION_TOKEN=... NOTION_GLOSSARY_DB_ID=...
@@ -265,15 +271,21 @@ ${transcript}
 10. decisions: 명확히 합의/결정된 사항만
 11. todos: 누가 무엇을 언제까지 할지 명시된 액션 아이템`;
 
+  // 요약은 gemini-2.5-pro 기본. Flash는 "긴 입력(100K+ chars) + structured
+  // output" 조합에서 지속적 503 UNAVAILABLE 반환 (6회 지수백오프 재시도로도
+  // 해결 안 됨). Pro는 별도 용량 풀이라 안정적 + 한국어 구조화 품질 우수.
+  // 비용: Flash 대비 약 22배지만 절대금액 건당 100~150원 수준.
+  // 전사는 Flash 유지 — 단순 작업이라 Flash로 충분.
+  // --summarize-model 플래그로 오버라이드 가능 (예: 'gemini-2.5-flash').
+  const summarizeModel = kwargs['summarize-model'] || 'gemini-2.5-pro';
+  console.log(`      Model: ${summarizeModel}`);
   const summarizeStart = Date.now();
   const summarizeResult = await withRetry('summarize', () => genAI.models.generateContent({
-    model: 'gemini-2.5-flash',
+    model: summarizeModel,
     contents: [createUserContent([summarizePrompt])],
     config: {
       responseMimeType: 'application/json',
       responseSchema: meetingSchema(),
-      // 전사 단계와 동일한 이유로 토큰 한도 명시. 요약은 thinking을 켜두는
-      // 게 구조화 품질에 도움됨 (긴 회의 요약이라 생각 단계가 유용).
       maxOutputTokens: 65536,
     },
   }));
