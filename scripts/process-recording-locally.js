@@ -110,6 +110,28 @@ console.log(`MIME type:   ${mimeType}`);
 
 const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
+// 503 (high demand), 429 (rate limit), 500 (internal) 대상 지수 백오프 재시도.
+// 2s → 4s → 8s → 16s → 32s 대기, 최대 5회 재시도.
+async function withRetry(label, fn, maxRetries = 5) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const status = err?.status ?? err?.response?.status ?? null;
+      const msg = err?.message || String(err);
+      const isRetryable = status === 503 || status === 429 || status === 500 ||
+        /503|UNAVAILABLE|high demand|RESOURCE_EXHAUSTED|overloaded/i.test(msg);
+      if (attempt === maxRetries || !isRetryable) {
+        throw err;
+      }
+      const waitSec = Math.min(2 ** (attempt + 1), 32);
+      console.error(`      [${label}] attempt ${attempt + 1}/${maxRetries + 1} failed (${status || 'network'}: ${msg.slice(0, 80)})`);
+      console.error(`      Retrying in ${waitSec}s...`);
+      await new Promise((r) => setTimeout(r, waitSec * 1000));
+    }
+  }
+}
+
 // ------- Step 1: 전사 -------
 
 let transcript;
@@ -154,7 +176,7 @@ if (existsSync(transcriptPath) && !flags.has('--force-retranscribe')) {
 6. 해설이나 요약 없이 들은 말만 옮겨 쓸 것`;
 
   const transcribeStart = Date.now();
-  const transcribeResult = await genAI.models.generateContent({
+  const transcribeResult = await withRetry('transcribe', () => genAI.models.generateContent({
     model: 'gemini-2.5-flash',
     contents: [
       createUserContent([
@@ -170,7 +192,7 @@ if (existsSync(transcriptPath) && !flags.has('--force-retranscribe')) {
       // 전사는 단순 작업이라 thinking 끄고 전체 토큰을 실제 출력에 할당.
       thinkingConfig: { thinkingBudget: 0 },
     },
-  });
+  }));
   const transcribeElapsed = ((Date.now() - transcribeStart) / 1000).toFixed(1);
 
   transcript = transcribeResult.text || '';
@@ -244,7 +266,7 @@ ${transcript}
 11. todos: 누가 무엇을 언제까지 할지 명시된 액션 아이템`;
 
   const summarizeStart = Date.now();
-  const summarizeResult = await genAI.models.generateContent({
+  const summarizeResult = await withRetry('summarize', () => genAI.models.generateContent({
     model: 'gemini-2.5-flash',
     contents: [createUserContent([summarizePrompt])],
     config: {
@@ -254,7 +276,7 @@ ${transcript}
       // 게 구조화 품질에 도움됨 (긴 회의 요약이라 생각 단계가 유용).
       maxOutputTokens: 65536,
     },
-  });
+  }));
   const summarizeElapsed = ((Date.now() - summarizeStart) / 1000).toFixed(1);
 
   const meetingData = JSON.parse(summarizeResult.text);
