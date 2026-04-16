@@ -29,6 +29,13 @@
 //   각 Gemini 호출이 짧아져 타임아웃 회피 + 전사본이 중간 산출물로 남아
 //   요약 실패 시 재전사 불필요.
 //
+// [한계]
+//   단일 transcribe 호출은 오디오 ~30분까지 60초 안에 처리 가능.
+//   더 긴 회의는 녹음 단계에서 MediaRecorder를 10분 세션으로 나눠
+//   독립 오디오 파일 여러 개로 저장해야 함 (RECOVERY-PLAN.md Step 4 참고).
+//   ※ Gemini Files API의 videoMetadata.startOffset/endOffset은 audio에
+//      적용 안 됨 (video 전용) — silently ignored.
+//
 // [핵심 설계 결정]
 //   - 청크 3.5MB 분할: Vercel Hobby 4.5MB 본문 한도 때문
 //   - Gemini Files API: 큰 오디오를 업로드 후 URI로 참조
@@ -199,24 +206,7 @@ async function handlePrepare(req, res) {
     fileUri: uploaded.uri,
     fileMimeType: uploaded.mimeType,
     state: uploaded.state,
-    durationSec: parseVideoDurationSec(uploaded.videoMetadata?.videoDuration),
-    sizeBytes: Number(uploaded.sizeBytes) || null,
   });
-}
-
-// Gemini Files API는 오디오 파일에 대해 videoMetadata.videoDuration을 "Xs" 형식 문자열로 반환.
-// 파싱 실패 시 null — 클라이언트가 sizeBytes로 대략 추정하거나 기본값 사용.
-function parseVideoDurationSec(duration) {
-  if (duration == null) return null;
-  if (typeof duration === 'number') return duration;
-  if (typeof duration === 'string') {
-    const m = duration.match(/^(\d+(?:\.\d+)?)s?$/);
-    if (m) return Math.round(parseFloat(m[1]));
-  }
-  if (typeof duration === 'object' && duration.seconds != null) {
-    return Number(duration.seconds);
-  }
-  return null;
 }
 
 // ------- 2단계: Gemini 파일 처리 상태 확인 (클라이언트가 폴링) -------
@@ -237,33 +227,20 @@ async function handleCheckFile(req, res) {
     state: fileInfo.state,
     fileUri: fileInfo.uri,
     fileMimeType: fileInfo.mimeType,
-    durationSec: parseVideoDurationSec(fileInfo.videoMetadata?.videoDuration),
-    sizeBytes: Number(fileInfo.sizeBytes) || null,
   });
 }
 
-// ------- 3단계: Gemini 오디오 → 한국어 전사문 (세그먼트 단위) -------
-//
-// 긴 오디오는 한 번에 전사하면 60초 한도를 넘어 타임아웃.
-// videoMetadata.startOffset/endOffset로 구간을 지정해서 여러 번 호출.
-// 각 세그먼트는 transcript-<paddedIndex>.txt로 Blob에 저장.
-// summarize 단계에서 알파벳 순으로 정렬해 합친다.
+// ------- 3단계: Gemini 오디오 → 한국어 전사문 -------
 
 async function handleTranscribe(req, res) {
   const body = await readJsonBody(req);
-  const { sessionId, fileUri, fileMimeType, segmentIndex, startOffsetSec, endOffsetSec } = body;
+  const { sessionId, fileUri, fileMimeType } = body;
 
   if (!sessionId || !/^[0-9a-f-]{36}$/i.test(sessionId)) {
     return jsonResponse(res, 400, { error: 'Invalid session id' });
   }
   if (!fileUri || !fileMimeType) {
     return jsonResponse(res, 400, { error: 'Missing fileUri/fileMimeType' });
-  }
-  if (segmentIndex == null || !Number.isInteger(segmentIndex) || segmentIndex < 0) {
-    return jsonResponse(res, 400, { error: 'Invalid segmentIndex' });
-  }
-  if (startOffsetSec == null || endOffsetSec == null || endOffsetSec <= startOffsetSec) {
-    return jsonResponse(res, 400, { error: 'Invalid start/end offset' });
   }
 
   const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -278,33 +255,23 @@ async function handleTranscribe(req, res) {
 5. 문장 단위로 줄바꿈하여 가독성 확보
 6. 해설이나 요약 없이 들은 말만 옮겨 쓸 것`;
 
-  // Gemini Files API 오디오에 시간 오프셋 지정 — 해당 구간만 처리됨.
-  const audioPart = {
-    fileData: {
-      fileUri,
-      mimeType: fileMimeType,
-    },
-    videoMetadata: {
-      startOffset: `${Math.floor(startOffsetSec)}s`,
-      endOffset: `${Math.ceil(endOffsetSec)}s`,
-    },
-  };
-
   const result = await genAI.models.generateContent({
     model: 'gemini-2.5-flash',
     contents: [
-      {
-        role: 'user',
-        parts: [{ text: promptText }, audioPart],
-      },
+      createUserContent([
+        promptText,
+        createPartFromUri(fileUri, fileMimeType),
+      ]),
     ],
   });
 
   const transcript = result.text || '';
+  if (!transcript.trim()) {
+    return jsonResponse(res, 500, { error: 'Empty transcript from Gemini' });
+  }
 
-  // 세그먼트별 파일로 저장 — 끝을 넘는 빈 세그먼트도 빈 파일로 기록(합칠 때 문제 없음).
-  const paddedIndex = String(segmentIndex).padStart(3, '0');
-  await put(`meetings/${sessionId}/transcript-${paddedIndex}.txt`, transcript, {
+  // 전사문을 Blob에 저장 (다음 단계 summarize에서 읽음)
+  await put(`meetings/${sessionId}/transcript.txt`, transcript, {
     access: 'public',
     contentType: 'text/plain; charset=utf-8',
     addRandomSuffix: false,
@@ -313,10 +280,7 @@ async function handleTranscribe(req, res) {
 
   return jsonResponse(res, 200, {
     ok: true,
-    segmentIndex,
     transcriptLength: transcript.length,
-    startOffsetSec,
-    endOffsetSec,
   });
 }
 
@@ -330,24 +294,19 @@ async function handleSummarize(req, res) {
     return jsonResponse(res, 400, { error: 'Invalid session id' });
   }
 
-  // Blob에서 세그먼트 전사문 전부 가져와 순서대로 합치기
-  const transcriptPrefix = `meetings/${sessionId}/transcript-`;
-  const { blobs: transcriptBlobs } = await list({ prefix: transcriptPrefix });
-  if (!transcriptBlobs.length) {
+  // Blob에서 전사문 가져오기
+  const transcriptKey = `meetings/${sessionId}/transcript.txt`;
+  const { blobs } = await list({ prefix: transcriptKey });
+  const transcriptBlob = blobs.find((b) => b.pathname === transcriptKey);
+  if (!transcriptBlob) {
     return jsonResponse(res, 400, { error: 'No transcript found — run transcribe first' });
   }
-  transcriptBlobs.sort((a, b) => a.pathname.localeCompare(b.pathname));
 
-  const segments = await Promise.all(
-    transcriptBlobs.map(async (b) => {
-      const r = await fetch(b.url);
-      return await r.text();
-    })
-  );
-  const transcript = segments.map((s) => s.trim()).filter(Boolean).join('\n\n');
+  const transcriptRes = await fetch(transcriptBlob.url);
+  const transcript = await transcriptRes.text();
 
   if (!transcript.trim()) {
-    return jsonResponse(res, 400, { error: 'Empty transcript across all segments' });
+    return jsonResponse(res, 400, { error: 'Empty transcript' });
   }
 
   // Notion 용어집 조회
