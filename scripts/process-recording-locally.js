@@ -162,8 +162,14 @@ if (existsSync(transcriptPath) && !flags.has('--force-retranscribe')) {
         createPartFromUri(fileInfo.uri, fileInfo.mimeType),
       ]),
     ],
-    // 60분 전사는 수만 토큰 나올 수 있어서 기본 8K 한도면 MAX_TOKENS로 잘림.
-    config: { maxOutputTokens: 65536 },
+    config: {
+      // 60분 전사는 수만 토큰 나올 수 있어서 기본 8K 한도면 MAX_TOKENS로 잘림.
+      maxOutputTokens: 65536,
+      // Gemini 2.5 Flash는 기본으로 thinking 모드 ON. thinking이 출력 토큰을
+      // 먹어치워 실제 전사 텍스트가 0 토큰으로 끝남 (finishReason=MAX_TOKENS).
+      // 전사는 단순 작업이라 thinking 끄고 전체 토큰을 실제 출력에 할당.
+      thinkingConfig: { thinkingBudget: 0 },
+    },
   });
   const transcribeElapsed = ((Date.now() - transcribeStart) / 1000).toFixed(1);
 
@@ -244,6 +250,9 @@ ${transcript}
     config: {
       responseMimeType: 'application/json',
       responseSchema: meetingSchema(),
+      // 전사 단계와 동일한 이유로 토큰 한도 명시. 요약은 thinking을 켜두는
+      // 게 구조화 품질에 도움됨 (긴 회의 요약이라 생각 단계가 유용).
+      maxOutputTokens: 65536,
     },
   });
   const summarizeElapsed = ((Date.now() - summarizeStart) / 1000).toFixed(1);
