@@ -25,7 +25,7 @@ body{
 .slide{
   position:absolute;inset:0;
   display:flex;flex-direction:column;align-items:center;justify-content:center;
-  padding:60px 80px;
+  padding:48px 80px 88px;
   opacity:0;pointer-events:none;
   transition:opacity 0.5s ease,transform 0.5s ease;
   overflow-y:auto;overflow-x:hidden;
@@ -176,6 +176,45 @@ p{font-size:clamp(16px,2vw,20px);color:var(--text-muted);line-height:1.7;text-al
   padding:14px 28px;border-radius:12px;text-decoration:none;
   font-weight:600;font-size:14px;transition:transform 0.15s;
 }
+/* Future / Enterprise */
+.future-compare{
+  display:grid;grid-template-columns:1fr auto 1fr;gap:16px;
+  margin-top:24px;max-width:800px;width:100%;align-items:start;
+}
+.future-card{
+  padding:24px;border-radius:14px;
+  background:var(--surface);border:1px solid var(--border);
+}
+.future-card.current{opacity:0.6}
+.future-card.next{border-color:rgba(124,106,239,0.3);box-shadow:0 0 24px rgba(124,106,239,0.06)}
+.future-card h3{font-size:15px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.future-card h3 .dot{
+  width:8px;height:8px;border-radius:50%;flex-shrink:0;
+}
+.future-card.current h3 .dot{background:var(--text-dim)}
+.future-card.next h3 .dot{background:var(--green)}
+.future-step{
+  display:flex;align-items:center;gap:8px;
+  font-size:13px;color:var(--text-muted);padding:6px 0;
+}
+.future-step .fs-icon{font-size:18px;width:28px;text-align:center;flex-shrink:0}
+.future-step.removed{text-decoration:line-through;opacity:0.4}
+.future-arrow{
+  display:flex;align-items:center;justify-content:center;
+  font-size:32px;color:var(--accent);align-self:center;
+}
+.future-benefit{
+  margin-top:24px;display:flex;gap:12px;flex-wrap:wrap;justify-content:center;max-width:700px;
+}
+.future-chip{
+  padding:8px 16px;border-radius:10px;font-size:13px;font-weight:500;
+  background:rgba(95,207,128,0.08);border:1px solid rgba(95,207,128,0.15);color:var(--green);
+}
+@media(max-width:700px){
+  .future-compare{grid-template-columns:1fr;gap:12px}
+  .future-arrow{transform:rotate(90deg);font-size:24px;justify-self:center}
+}
+
 .closing-link:active{transform:scale(0.97)}
 .closing-link.primary{background:var(--accent);color:#fff}
 .closing-link.secondary{background:var(--surface);color:var(--text);border:1px solid var(--border)}
@@ -226,7 +265,7 @@ p{font-size:clamp(16px,2vw,20px);color:var(--text-muted);line-height:1.7;text-al
 
 /* ===== RESPONSIVE — Notion embed & 모바일 ===== */
 @media(max-width:800px){
-  .slide{padding:40px 32px}
+  .slide{padding:32px 32px 80px}
   h1{font-size:clamp(28px,6vw,42px)}
   h2{font-size:clamp(22px,5vw,32px);margin-bottom:20px}
   p{font-size:clamp(14px,3vw,18px)}
@@ -260,7 +299,7 @@ p{font-size:clamp(16px,2vw,20px);color:var(--text-muted);line-height:1.7;text-al
   .nav-counter{font-size:12px;min-width:50px}
 }
 @media(max-width:480px){
-  .slide{padding:32px 20px 60px}
+  .slide{padding:24px 20px 80px}
   .problem-grid{grid-template-columns:1fr}
   .feat-grid{grid-template-columns:1fr}
   .decision-grid{grid-template-columns:1fr}
@@ -272,7 +311,7 @@ p{font-size:clamp(16px,2vw,20px);color:var(--text-muted);line-height:1.7;text-al
   .badge{font-size:11px;padding:6px 12px}
 }
 @media(max-height:500px){
-  .slide{padding:24px 40px}
+  .slide{padding:20px 40px 72px}
   .cover-icon{font-size:40px;margin-bottom:12px}
   h1{font-size:28px}
   h2{font-size:22px;margin-bottom:12px}
@@ -641,8 +680,39 @@ p{font-size:clamp(16px,2vw,20px);color:var(--text-muted);line-height:1.7;text-al
   </div>
 </div>
 
-<!-- ===== 11. CLOSING ===== -->
+<!-- ===== 11. NEXT — Claude Enterprise ===== -->
 <div class="slide" data-index="10">
+  <div class="tag">Next Step</div>
+  <h2>5월부터 — Claude Enterprise 전환</h2>
+  <div class="future-compare">
+    <div class="future-card current">
+      <h3><span class="dot"></span>현재 구조</h3>
+      <div class="future-step"><span class="fs-icon">📱</span>PWA 녹음</div>
+      <div class="future-step"><span class="fs-icon">▲</span>Vercel 서버리스</div>
+      <div class="future-step"><span class="fs-icon">▲</span>Vercel Blob 저장</div>
+      <div class="future-step"><span class="fs-icon">✨</span>Gemini (전사+요약)</div>
+      <div class="future-step"><span class="fs-icon">📝</span>Notion API (코드)</div>
+    </div>
+    <div class="future-arrow">→</div>
+    <div class="future-card next">
+      <h3><span class="dot"></span>Enterprise 전환 후</h3>
+      <div class="future-step"><span class="fs-icon">📱</span>PWA 녹음 (재활용)</div>
+      <div class="future-step removed"><span class="fs-icon">▲</span>Vercel 서버리스</div>
+      <div class="future-step removed"><span class="fs-icon">▲</span>Vercel Blob 저장</div>
+      <div class="future-step"><span class="fs-icon">🤖</span>Claude (전사+요약+Notion)</div>
+      <div class="future-step"><span class="fs-icon">🔌</span>MCP로 Notion 직접 연결</div>
+    </div>
+  </div>
+  <div class="future-benefit">
+    <div class="future-chip">서버 불필요</div>
+    <div class="future-chip">코드 대폭 축소</div>
+    <div class="future-chip">학습 제외 기본 보장</div>
+    <div class="future-chip">용어집도 자연어로</div>
+  </div>
+</div>
+
+<!-- ===== 12. CLOSING ===== -->
+<div class="slide" data-index="11">
   <div class="cover-icon">🙋</div>
   <h2>감사합니다</h2>
   <p>질문 받겠습니다</p>
@@ -698,6 +768,7 @@ const slideMeta = [
   { title: '실제 결과물 — Notion 회의록', tag: 'Result' },
   { title: '핵심 기술 결정', tag: 'Why?' },
   { title: '배운 점 & 한계', tag: 'Takeaway' },
+  { title: '5월부터 — Enterprise 전환', tag: 'Next' },
   { title: '감사합니다', tag: 'Q&A' },
 ];
 
