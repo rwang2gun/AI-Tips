@@ -565,6 +565,20 @@ ${transcript}
 
   const meetingData = JSON.parse(result.text);
 
+  // 1차 topic이 50자 초과면 Pro로 한 번 더 압축. 입력이 작아 빠르고 503 위험 적음.
+  // 실패 시 1차 topic 유지 (요약 자체는 이미 성공).
+  if (meetingData.topic && meetingData.topic.length > 50) {
+    try {
+      const refined = await withRetry(() => refineTopic(genAI, meetingData));
+      if (refined && refined.length > 0 && refined.length < meetingData.topic.length) {
+        console.log(`[refine-topic] ${meetingData.topic.length} → ${refined.length} chars`);
+        meetingData.topic = refined;
+      }
+    } catch (e) {
+      console.warn('[refine-topic] failed (1차 topic 유지):', e?.message);
+    }
+  }
+
   // 결과 JSON을 Blob에 저장 (다음 단계 finalize-notion에서 읽음)
   const payload = { meetingData, date: today };
   await put(`meetings/${sessionId}/result.json`, JSON.stringify(payload), {
@@ -612,6 +626,43 @@ async function handleFinalizeNotion(req, res) {
     title: meetingData.title,
     notionUrl,
   });
+}
+
+// ------- 1차 topic 재압축 (Pro) -------
+
+// 1차 요약(Flash) 결과의 topic이 50자 초과일 때 Pro로 한 번 더 짧게 압축.
+// 입력은 title + 1차 topic + agenda 제목들로 매우 작아서 빠르게 끝남.
+async function refineTopic(genAI, meetingData) {
+  const agendaTitles = (meetingData.agenda || [])
+    .map((a) => `- ${a.title}`)
+    .filter((s) => s.length > 2)
+    .join('\n');
+
+  const prompt = `다음은 게임 기획 회의의 1차 요약 결과입니다. topic 필드가 길어서 한 줄로 다시 압축이 필요합니다.
+
+[제목]
+${meetingData.title || '(없음)'}
+
+[현재 topic — ${meetingData.topic.length}자]
+${meetingData.topic}
+
+${agendaTitles ? `[아젠다 제목들]\n${agendaTitles}\n` : ''}
+요구사항:
+- 50자 이내 한 문장으로 회의의 본질적 주제만 표현
+- 아젠다 항목을 나열하지 말 것 ("A, B, C 논의" 같은 형태 금지)
+- 새로운 topic 한 줄만 출력. 따옴표/접두어/설명 없이 본문만.`;
+
+  const result = await genAI.models.generateContent({
+    model: 'gemini-2.5-pro',
+    contents: [createUserContent([prompt])],
+    config: { maxOutputTokens: 256 },
+  });
+
+  let text = (result.text || '').trim();
+  text = text.split('\n')[0].trim();
+  text = text.replace(/^["'`「『\[(](.*)["'`」』\])]$/s, '$1').trim();
+  text = text.replace(/^[Tt]opic\s*[:：]\s*/, '').trim();
+  return text;
 }
 
 // ------- Gemini 응답 스키마 -------

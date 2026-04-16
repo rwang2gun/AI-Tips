@@ -329,6 +329,27 @@ ${transcript}
   const summarizeElapsed = ((Date.now() - summarizeStart) / 1000).toFixed(1);
 
   const meetingData = JSON.parse(summarizeResult.text);
+
+  // 1차 topic이 50자 초과면 Pro로 한 번 더 압축. 작은 입력만 보내서 빠르고
+  // 503 위험 적음. 실패 시 1차 topic 그대로 유지 (요약 자체는 이미 성공).
+  if (meetingData.topic && meetingData.topic.length > 50) {
+    const before = meetingData.topic;
+    console.log(`      Topic 50자 초과 (${before.length}자) — Pro로 재압축 시도...`);
+    try {
+      const refined = await withRetry('refine-topic', () => refineTopic(meetingData));
+      if (refined && refined.length > 0 && refined.length < before.length) {
+        meetingData.topic = refined;
+        console.log(`      Topic 재압축: ${before.length}자 → ${refined.length}자`);
+        console.log(`        before: ${before}`);
+        console.log(`        after:  ${refined}`);
+      } else {
+        console.log(`      Topic 재압축 결과가 더 짧지 않아 1차 결과 유지 (refined=${refined?.length ?? 0}자).`);
+      }
+    } catch (e) {
+      console.warn(`      [refine-topic] failed (1차 topic 유지): ${e?.message}`);
+    }
+  }
+
   result = { meetingData, date: today };
 
   await fs.writeFile(resultPath, JSON.stringify(result, null, 2), 'utf-8');
@@ -355,6 +376,43 @@ console.log(`\nWhen satisfied, create the Notion page:`);
 console.log(`   node --env-file=.env scripts/upload-to-notion.js "${resultPath}"`);
 
 // ------- Helpers -------
+
+// 1차 요약 결과에서 topic만 Pro로 한 번 더 압축. 입력이 매우 작아 빠르고 안정.
+// 입력: title + 1차 topic + agenda 제목들 (회의 본질 파악에 충분한 메타)
+// 출력: 50자 이내 한 줄 (Pro가 살짝 넘기는 경우 그대로 채택, 후처리에서 wrapper만 제거)
+async function refineTopic(meetingData) {
+  const agendaTitles = (meetingData.agenda || [])
+    .map((a) => `- ${a.title}`)
+    .filter((s) => s.length > 2)
+    .join('\n');
+
+  const prompt = `다음은 게임 기획 회의의 1차 요약 결과입니다. topic 필드가 길어서 한 줄로 다시 압축이 필요합니다.
+
+[제목]
+${meetingData.title || '(없음)'}
+
+[현재 topic — ${meetingData.topic.length}자]
+${meetingData.topic}
+
+${agendaTitles ? `[아젠다 제목들]\n${agendaTitles}\n` : ''}
+요구사항:
+- 50자 이내 한 문장으로 회의의 본질적 주제만 표현
+- 아젠다 항목을 나열하지 말 것 ("A, B, C 논의" 같은 형태 금지)
+- 새로운 topic 한 줄만 출력. 따옴표/접두어/설명 없이 본문만.`;
+
+  const result = await genAI.models.generateContent({
+    model: 'gemini-2.5-pro',
+    contents: [createUserContent([prompt])],
+    config: { maxOutputTokens: 256 },
+  });
+
+  let text = (result.text || '').trim();
+  // 가끔 모델이 따옴표/접두어 붙임 — 안전 장치
+  text = text.split('\n')[0].trim();
+  text = text.replace(/^["'`「『\[(](.*)["'`」』\])]$/s, '$1').trim();
+  text = text.replace(/^[Tt]opic\s*[:：]\s*/, '').trim();
+  return text;
+}
 
 // 유의어 사전 DB 조회 (Notion). 실패 시 빈 배열 반환.
 // 반환 형태: [{ 정답용어, 오인식표현[], 치환전략, 카테고리, 맥락메모 }, ...]
