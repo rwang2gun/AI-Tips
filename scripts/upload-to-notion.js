@@ -25,8 +25,13 @@
 // ============================================================
 
 import { Client as NotionClient } from '@notionhq/client';
+import { Agent, setGlobalDispatcher } from 'undici';
 import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+
+// process-recording-locally.js와 동일하게 undici 타임아웃 제거.
+// Notion children 많을 때 응답이 느려질 수 있어 안전하게 무제한.
+setGlobalDispatcher(new Agent({ headersTimeout: 0, bodyTimeout: 0 }));
 
 // ------- CLI 인자 -------
 

@@ -42,9 +42,14 @@
 
 import { GoogleGenAI, createUserContent, createPartFromUri } from '@google/genai';
 import { Client as NotionClient } from '@notionhq/client';
+import { Agent, setGlobalDispatcher } from 'undici';
 import fs from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+
+// 긴 오디오 전사 시 Gemini 응답이 5분을 넘을 수 있어 undici 기본
+// headersTimeout(5분)에 걸림. 로컬 CLI라 무제한으로 설정.
+setGlobalDispatcher(new Agent({ headersTimeout: 0, bodyTimeout: 0 }));
 
 // ------- CLI 인자 파싱 -------
 
