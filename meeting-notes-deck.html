@@ -23,9 +23,9 @@ body{
 /* ===== DECK ENGINE ===== */
 .deck{position:relative;width:100%;height:100dvh;overflow:hidden;cursor:pointer}
 .slide{
-  position:absolute;inset:0;
+  position:absolute;top:0;left:0;right:0;bottom:72px;
   display:flex;flex-direction:column;align-items:center;justify-content:center;
-  padding:48px 80px 88px;
+  padding:40px 80px 20px;
   opacity:0;pointer-events:none;
   transition:opacity 0.5s ease,transform 0.5s ease;
   overflow-y:auto;overflow-x:hidden;
@@ -265,7 +265,7 @@ p{font-size:clamp(16px,2vw,20px);color:var(--text-muted);line-height:1.7;text-al
 
 /* ===== RESPONSIVE — Notion embed & 모바일 ===== */
 @media(max-width:800px){
-  .slide{padding:32px 32px 80px}
+  .slide{padding:28px 32px 16px}
   h1{font-size:clamp(28px,6vw,42px)}
   h2{font-size:clamp(22px,5vw,32px);margin-bottom:20px}
   p{font-size:clamp(14px,3vw,18px)}
@@ -299,7 +299,7 @@ p{font-size:clamp(16px,2vw,20px);color:var(--text-muted);line-height:1.7;text-al
   .nav-counter{font-size:12px;min-width:50px}
 }
 @media(max-width:480px){
-  .slide{padding:24px 20px 80px}
+  .slide{padding:20px 20px 12px}
   .problem-grid{grid-template-columns:1fr}
   .feat-grid{grid-template-columns:1fr}
   .decision-grid{grid-template-columns:1fr}
@@ -311,7 +311,7 @@ p{font-size:clamp(16px,2vw,20px);color:var(--text-muted);line-height:1.7;text-al
   .badge{font-size:11px;padding:6px 12px}
 }
 @media(max-height:500px){
-  .slide{padding:20px 40px 72px}
+  .slide{padding:16px 40px 8px}
   .cover-icon{font-size:40px;margin-bottom:12px}
   h1{font-size:28px}
   h2{font-size:22px;margin-bottom:12px}
@@ -537,7 +537,7 @@ p{font-size:clamp(16px,2vw,20px);color:var(--text-muted);line-height:1.7;text-al
 </div>
 
 <!-- ===== 7. FEATURES REQUESTED ===== -->
-<div class="slide" data-index="6" style="justify-content:flex-start;padding-top:40px">
+<div class="slide" data-index="6">
   <div class="tag">Features</div>
   <h2>내가 요청한 기능들</h2>
   <div class="feat-grid">
