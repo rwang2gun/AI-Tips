@@ -146,7 +146,7 @@
 | `object_not_found` | 3단계 (Notion DB에 Integration 추가) 누락 |
 | `Invalid API key` | 환경변수 오타 또는 키 만료 |
 | `BLOB_READ_WRITE_TOKEN not found` | 5단계 (Vercel Blob 활성화) 누락 |
-| 1시간 회의 처리 시 타임아웃 | Vercel Hobby 함수는 60초 제한. Pro 업그레이드 또는 분할 처리 필요 |
+| 1시간 이상 회의 처리 중 `FUNCTION_INVOCATION_TIMEOUT` | 처리가 prepare → check-file(폴링) → finalize 3단계로 분할되어 있어 각 단계가 60초 안에 끝나야 함. finalize가 계속 타임아웃이면 Vercel Pro로 업그레이드(maxDuration 300s로 상향) 또는 회의를 나눠서 녹음 |
 
 Vercel Logs 보는 법: 프로젝트 → **Logs** 탭 → 최근 함수 호출 클릭
 

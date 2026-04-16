@@ -183,19 +183,71 @@ async function processMeeting(blob) {
       }
     }
 
-    // 처리 트리거
+    // 1) prepare — 청크 결합 + Gemini Files API 업로드
+    els.processingText.textContent = '오디오 준비 중...';
+    const prepRes = await fetch('/api/process-meeting', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Action': 'prepare',
+      },
+      body: JSON.stringify({
+        sessionId,
+        mimeType: blob.type,
+      }),
+    });
+
+    if (!prepRes.ok) {
+      const err = await prepRes.text();
+      throw new Error(`준비 실패: ${err}`);
+    }
+
+    const prepData = await prepRes.json();
+
+    // 2) check-file — Gemini 파일이 ACTIVE 될 때까지 폴링
+    let fileState = prepData.state;
+    let fileUri = prepData.fileUri;
+    let fileMimeType = prepData.fileMimeType;
+    const maxPolls = 60; // 최대 2분 (2초 간격)
+    for (let i = 0; i < maxPolls && fileState === 'PROCESSING'; i++) {
+      els.processingText.textContent = `AI 파일 처리 중... (${i + 1}/${maxPolls})`;
+      await new Promise((r) => setTimeout(r, 2000));
+      const chkRes = await fetch('/api/process-meeting', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Action': 'check-file',
+        },
+        body: JSON.stringify({ fileName: prepData.fileName }),
+      });
+      if (!chkRes.ok) {
+        const err = await chkRes.text();
+        throw new Error(`파일 상태 확인 실패: ${err}`);
+      }
+      const chkData = await chkRes.json();
+      fileState = chkData.state;
+      fileUri = chkData.fileUri || fileUri;
+      fileMimeType = chkData.fileMimeType || fileMimeType;
+    }
+
+    if (fileState !== 'ACTIVE') {
+      throw new Error(`Gemini 파일 상태: ${fileState}`);
+    }
+
+    // 3) finalize — Gemini 전사/요약 + Notion 페이지 생성
     els.processingText.textContent = 'AI가 회의록을 작성 중...';
     const res = await fetch('/api/process-meeting', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Action': 'process',
+        'X-Action': 'finalize',
       },
       body: JSON.stringify({
         sessionId,
+        fileUri,
+        fileMimeType,
         title: els.meetingTitle.value || null,
         meetingType: els.meetingType.value || null,
-        mimeType: blob.type,
         durationSec: Math.floor((Date.now() - startedAt) / 1000),
       }),
     });

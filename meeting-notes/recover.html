@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0c0b10">
+<title>회의록 복구 — 이전 녹음 재처리</title>
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&family=Outfit:wght@500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<style>
+  .recover-form{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    gap:16px;
+    padding:20px 0;
+  }
+  .recover-form h1{
+    font-size:20px;
+    font-weight:700;
+    margin-bottom:4px;
+  }
+  .recover-form .desc{
+    font-size:13px;
+    color:var(--text-muted);
+    margin-bottom:16px;
+    line-height:1.5;
+  }
+  .recover-form label{
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+  }
+  .recover-form span{
+    font-size:12px;
+    color:var(--text-muted);
+    font-weight:500;
+  }
+  .recover-form input,.recover-form select{
+    width:100%;
+    padding:12px 14px;
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:10px;
+    color:var(--text);
+    font-family:inherit;
+    font-size:14px;
+    user-select:text;
+    -webkit-user-select:text;
+  }
+  .recover-form input:focus,.recover-form select:focus{
+    outline:none;
+    border-color:var(--accent);
+  }
+  .recover-btn{
+    margin-top:12px;
+    padding:14px 24px;
+    background:var(--accent);
+    color:white;
+    border:none;
+    border-radius:12px;
+    font-family:inherit;
+    font-size:15px;
+    font-weight:600;
+    cursor:pointer;
+    box-shadow:0 4px 16px rgba(124,106,239,0.3);
+  }
+  .recover-btn:active{transform:scale(0.97)}
+  .recover-btn:disabled{opacity:0.5;cursor:not-allowed}
+  .hint-box{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:12px 14px;
+    font-size:12px;
+    color:var(--text-muted);
+    line-height:1.6;
+  }
+  .hint-box code{
+    background:var(--surface-2);
+    color:var(--text);
+    padding:1px 6px;
+    border-radius:4px;
+    font-family:monospace;
+    font-size:11px;
+  }
+</style>
+</head>
+<body>
+  <main class="app">
+    <header class="app-header">
+      <div class="logo">
+        <span class="dot"></span>
+        <span>회의록 복구</span>
+      </div>
+      <a href="./" class="back-link">← 녹음기</a>
+    </header>
+
+    <section class="recover-form" id="form">
+      <h1>이전 녹음 재처리</h1>
+      <p class="desc">처리가 실패했지만 오디오 청크가 Vercel Blob에 남아있는 경우, sessionId로 재처리할 수 있습니다.</p>
+
+      <label>
+        <span>Session ID (UUID)</span>
+        <input type="text" id="sessionId" placeholder="예: 12345678-abcd-4ef0-..." autocapitalize="off" autocomplete="off" spellcheck="false">
+      </label>
+
+      <label>
+        <span>MIME 타입</span>
+        <select id="mimeType">
+          <option value="audio/webm;codecs=opus">audio/webm;codecs=opus (Android Chrome 기본)</option>
+          <option value="audio/webm">audio/webm</option>
+          <option value="audio/mp4">audio/mp4 (iOS Safari 기본)</option>
+          <option value="audio/ogg">audio/ogg</option>
+        </select>
+      </label>
+
+      <label>
+        <span>회의 제목 (선택)</span>
+        <input type="text" id="meetingTitle" placeholder="비워두면 자동 생성">
+      </label>
+
+      <label>
+        <span>회의 유형</span>
+        <select id="meetingType">
+          <option value="">자동 분류</option>
+          <option value="킥오프">킥오프</option>
+          <option value="내부 논의">내부 논의</option>
+          <option value="실무 논의">실무 논의</option>
+          <option value="기타">기타</option>
+        </select>
+      </label>
+
+      <button class="recover-btn" id="recoverBtn" type="button">복구 시작</button>
+
+      <div class="hint-box">
+        <strong>sessionId 찾는 법</strong><br>
+        Vercel Dashboard → Storage → <code>meeting-audio</code> → Browser 섹션에서 <code>meetings/</code> 검색 → 경로 <code>meetings/&lt;UUID&gt;/chunk-0000.bin</code>의 UUID 부분을 복사
+      </div>
+    </section>
+
+    <section class="processing hidden" id="processing">
+      <div class="spinner"></div>
+      <div class="processing-text" id="processingText">처리 중...</div>
+      <div class="processing-sub">전사 → 요약 → Notion 저장</div>
+    </section>
+
+    <section class="result hidden" id="result">
+      <div class="result-icon">✅</div>
+      <h2 id="resultTitle">회의록이 복구되었습니다</h2>
+      <a id="resultLink" href="#" target="_blank" class="result-link">Notion에서 열기 →</a>
+      <button class="ghost-btn" id="newBtn" type="button">다른 세션 복구</button>
+    </section>
+
+    <section class="error hidden" id="error">
+      <div class="error-icon">⚠️</div>
+      <div class="error-text" id="errorText"></div>
+      <button class="ghost-btn" id="retryBtn" type="button">다시 시도</button>
+    </section>
+  </main>
+
+  <script>
+    const els = {
+      form: document.getElementById('form'),
+      sessionId: document.getElementById('sessionId'),
+      mimeType: document.getElementById('mimeType'),
+      meetingTitle: document.getElementById('meetingTitle'),
+      meetingType: document.getElementById('meetingType'),
+      recoverBtn: document.getElementById('recoverBtn'),
+      processing: document.getElementById('processing'),
+      processingText: document.getElementById('processingText'),
+      result: document.getElementById('result'),
+      resultLink: document.getElementById('resultLink'),
+      resultTitle: document.getElementById('resultTitle'),
+      newBtn: document.getElementById('newBtn'),
+      error: document.getElementById('error'),
+      errorText: document.getElementById('errorText'),
+      retryBtn: document.getElementById('retryBtn'),
+    };
+
+    function showSection(name) {
+      ['form', 'processing', 'result', 'error'].forEach((id) => {
+        els[id].classList.toggle('hidden', id !== name);
+      });
+    }
+
+    function showError(msg) {
+      showSection('error');
+      els.errorText.textContent = msg;
+    }
+
+    async function recover() {
+      const sessionId = els.sessionId.value.trim();
+      const mimeType = els.mimeType.value;
+
+      if (!/^[0-9a-f-]{36}$/i.test(sessionId)) {
+        showError('올바른 UUID 형식의 sessionId를 입력하세요 (36자).');
+        return;
+      }
+
+      showSection('processing');
+
+      try {
+        // 1) prepare
+        els.processingText.textContent = '오디오 준비 중...';
+        const prepRes = await fetch('/api/process-meeting', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Action': 'prepare',
+          },
+          body: JSON.stringify({ sessionId, mimeType }),
+        });
+        if (!prepRes.ok) throw new Error(`준비 실패: ${await prepRes.text()}`);
+        const prepData = await prepRes.json();
+
+        // 2) check-file (polling)
+        let fileState = prepData.state;
+        let fileUri = prepData.fileUri;
+        let fileMimeType = prepData.fileMimeType;
+        const maxPolls = 60;
+        for (let i = 0; i < maxPolls && fileState === 'PROCESSING'; i++) {
+          els.processingText.textContent = `AI 파일 처리 중... (${i + 1}/${maxPolls})`;
+          await new Promise((r) => setTimeout(r, 2000));
+          const chkRes = await fetch('/api/process-meeting', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Action': 'check-file',
+            },
+            body: JSON.stringify({ fileName: prepData.fileName }),
+          });
+          if (!chkRes.ok) throw new Error(`상태 확인 실패: ${await chkRes.text()}`);
+          const chkData = await chkRes.json();
+          fileState = chkData.state;
+          fileUri = chkData.fileUri || fileUri;
+          fileMimeType = chkData.fileMimeType || fileMimeType;
+        }
+        if (fileState !== 'ACTIVE') throw new Error(`Gemini 파일 상태: ${fileState}`);
+
+        // 3) finalize
+        els.processingText.textContent = 'AI가 회의록을 작성 중...';
+        const res = await fetch('/api/process-meeting', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Action': 'finalize',
+          },
+          body: JSON.stringify({
+            sessionId,
+            fileUri,
+            fileMimeType,
+            title: els.meetingTitle.value || null,
+            meetingType: els.meetingType.value || null,
+            durationSec: null,
+          }),
+        });
+        if (!res.ok) throw new Error(`처리 실패: ${await res.text()}`);
+        const data = await res.json();
+
+        showSection('result');
+        els.resultTitle.textContent = data.title || '회의록이 복구되었습니다';
+        els.resultLink.href = data.notionUrl;
+      } catch (err) {
+        showError(err.message || '알 수 없는 오류가 발생했습니다.');
+      }
+    }
+
+    function reset() {
+      showSection('form');
+    }
+
+    els.recoverBtn.addEventListener('click', recover);
+    els.newBtn.addEventListener('click', reset);
+    els.retryBtn.addEventListener('click', reset);
+
+    // URL 파라미터로 sessionId 자동 입력 지원 (?session=<uuid>)
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlSession = urlParams.get('session');
+    if (urlSession) els.sessionId.value = urlSession;
+  </script>
+</body>
+</html>
