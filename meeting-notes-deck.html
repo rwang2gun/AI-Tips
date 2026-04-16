@@ -21,13 +21,14 @@ body{
 }
 
 /* ===== DECK ENGINE ===== */
-.deck{position:relative;width:100%;height:100dvh;overflow:hidden}
+.deck{position:relative;width:100%;height:100dvh;overflow:hidden;cursor:pointer}
 .slide{
   position:absolute;inset:0;
   display:flex;flex-direction:column;align-items:center;justify-content:center;
   padding:60px 80px;
   opacity:0;pointer-events:none;
   transition:opacity 0.5s ease,transform 0.5s ease;
+  overflow-y:auto;overflow-x:hidden;
   transform:translateX(60px);
 }
 .slide.active{opacity:1;pointer-events:auto;transform:translateX(0)}
@@ -178,6 +179,108 @@ p{font-size:clamp(16px,2vw,20px);color:var(--text-muted);line-height:1.7;text-al
 .closing-link:active{transform:scale(0.97)}
 .closing-link.primary{background:var(--accent);color:#fff}
 .closing-link.secondary{background:var(--surface);color:var(--text);border:1px solid var(--border)}
+
+/* ===== TOC OVERLAY ===== */
+.toc-overlay{
+  position:fixed;inset:0;z-index:200;
+  background:rgba(12,11,16,0.92);backdrop-filter:blur(16px);
+  display:none;align-items:center;justify-content:center;
+  padding:40px 20px;
+}
+.toc-overlay.open{display:flex}
+.toc-panel{
+  max-width:480px;width:100%;max-height:80dvh;overflow-y:auto;
+}
+.toc-title{
+  font-family:'Outfit',sans-serif;font-weight:700;font-size:18px;
+  margin-bottom:16px;color:var(--text-muted);
+  display:flex;align-items:center;justify-content:space-between;
+}
+.toc-close{
+  width:32px;height:32px;border-radius:8px;border:none;
+  background:var(--surface);color:var(--text-muted);
+  font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+}
+.toc-close:hover{background:var(--surface-2);color:var(--text)}
+.toc-list{list-style:none}
+.toc-item{
+  display:flex;align-items:center;gap:12px;
+  padding:12px 16px;border-radius:10px;cursor:pointer;
+  transition:background 0.15s;margin-bottom:4px;
+}
+.toc-item:hover{background:var(--surface)}
+.toc-item.active{background:rgba(124,106,239,0.1)}
+.toc-item-num{
+  width:28px;height:28px;border-radius:8px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;
+  background:var(--surface);color:var(--text-dim);
+}
+.toc-item.active .toc-item-num{background:rgba(124,106,239,0.15);color:var(--accent)}
+.toc-item-label{font-size:14px;color:var(--text-muted)}
+.toc-item.active .toc-item-label{color:var(--text)}
+.toc-item-tag{
+  font-size:10px;color:var(--text-dim);background:var(--surface-2);
+  padding:2px 8px;border-radius:4px;margin-left:auto;flex-shrink:0;
+}
+
+/* ===== RESPONSIVE — Notion embed & 모바일 ===== */
+@media(max-width:800px){
+  .slide{padding:40px 32px}
+  h1{font-size:clamp(28px,6vw,42px)}
+  h2{font-size:clamp(22px,5vw,32px);margin-bottom:20px}
+  p{font-size:clamp(14px,3vw,18px)}
+  .sub{font-size:clamp(15px,3.5vw,20px)}
+  .cover-icon{font-size:56px}
+  .arch-flow{gap:8px}
+  .arch-node{padding:16px 14px;min-width:80px}
+  .arch-node .icon{font-size:28px}
+  .arch-node .name{font-size:12px}
+  .arch-node .role{font-size:10px;max-width:70px}
+  .arch-arrow{font-size:20px}
+  .problem-grid{gap:16px}
+  .problem-card{padding:20px}
+  .problem-card .icon{font-size:36px;margin-bottom:10px}
+  .problem-card h3{font-size:15px}
+  .problem-card p{font-size:12px}
+  .tl-ask{font-size:13px}
+  .tl-result{font-size:12px}
+  .feat-grid{gap:10px}
+  .feat-item{padding:12px 14px}
+  .feat-text{font-size:13px}
+  .feat-text span{font-size:11px}
+  .decision-card{padding:18px}
+  .decision-card .q{font-size:13px}
+  .decision-card .a{font-size:13px}
+  .decision-card .why{font-size:11px}
+  .learn-item{font-size:12px;padding:10px 14px}
+  .cost-tag{font-size:14px;padding:10px 20px}
+  .result-mock{max-width:100%}
+  .deck-nav{padding:8px 14px;gap:10px;bottom:12px}
+  .nav-counter{font-size:12px;min-width:50px}
+}
+@media(max-width:480px){
+  .slide{padding:32px 20px 60px}
+  .problem-grid{grid-template-columns:1fr}
+  .feat-grid{grid-template-columns:1fr}
+  .decision-grid{grid-template-columns:1fr}
+  .learn-cols{flex-direction:column;gap:16px}
+  .arch-flow{flex-wrap:wrap}
+  .timeline{max-width:100%}
+  .tl-item{padding-left:16px}
+  .cover-badges{gap:8px}
+  .badge{font-size:11px;padding:6px 12px}
+}
+@media(max-height:500px){
+  .slide{padding:24px 40px}
+  .cover-icon{font-size:40px;margin-bottom:12px}
+  h1{font-size:28px}
+  h2{font-size:22px;margin-bottom:12px}
+  .problem-grid{margin-top:16px;gap:12px}
+  .arch-flow{margin-top:16px}
+  .timeline{margin-top:12px}
+  .tl-item{padding:8px 0 8px 20px}
+}
 
 /* ===== NAV ===== */
 .deck-nav{
@@ -554,9 +657,21 @@ p{font-size:clamp(16px,2vw,20px);color:var(--text-muted);line-height:1.7;text-al
 
 </div><!-- /deck -->
 
+<!-- TOC OVERLAY -->
+<div class="toc-overlay" id="tocOverlay">
+  <div class="toc-panel">
+    <div class="toc-title">
+      <span>목차</span>
+      <button class="toc-close" id="tocClose">✕</button>
+    </div>
+    <ul class="toc-list" id="tocList"></ul>
+  </div>
+</div>
+
 <!-- NAV BAR -->
 <div class="deck-nav">
   <button class="nav-btn" id="prevBtn" onclick="go(-1)">←</button>
+  <button class="nav-btn" id="tocBtn" title="목차 (T)">☰</button>
   <div class="nav-dots" id="dots"></div>
   <span class="nav-counter" id="counter">1 / 11</span>
   <button class="nav-btn" id="nextBtn" onclick="go(1)">→</button>
@@ -566,8 +681,25 @@ p{font-size:clamp(16px,2vw,20px);color:var(--text-muted);line-height:1.7;text-al
 const slides = document.querySelectorAll('.slide');
 const dots = document.getElementById('dots');
 const counter = document.getElementById('counter');
+const tocOverlay = document.getElementById('tocOverlay');
+const tocList = document.getElementById('tocList');
 let cur = 0;
 const total = slides.length;
+
+// 슬라이드 메타 (TOC용)
+const slideMeta = [
+  { title: 'Claude Code로 회의록 앱 만들기', tag: 'Cover' },
+  { title: '회의실에서 생기는 문제', tag: 'Problem' },
+  { title: '해결 아이디어', tag: 'Idea' },
+  { title: '사용한 서비스들', tag: 'Architecture' },
+  { title: '대화형 개발 과정', tag: 'Claude Code' },
+  { title: '대화형 개발 과정 (계속)', tag: 'Claude Code' },
+  { title: '내가 요청한 기능들', tag: 'Features' },
+  { title: '실제 결과물 — Notion 회의록', tag: 'Result' },
+  { title: '핵심 기술 결정', tag: 'Why?' },
+  { title: '배운 점 & 한계', tag: 'Takeaway' },
+  { title: '감사합니다', tag: 'Q&A' },
+];
 
 // 도트 생성
 for(let i=0;i<total;i++){
@@ -577,33 +709,75 @@ for(let i=0;i<total;i++){
   dots.appendChild(d);
 }
 
+// TOC 리스트 생성
+slideMeta.forEach((m,i)=>{
+  const li=document.createElement('li');
+  li.className='toc-item'+(i===0?' active':'');
+  li.innerHTML=`<div class="toc-item-num">${i+1}</div><span class="toc-item-label">${m.title}</span><span class="toc-item-tag">${m.tag}</span>`;
+  li.onclick=()=>{goTo(i);closeToc()};
+  tocList.appendChild(li);
+});
+
 function goTo(n){
   if(n<0||n>=total)return;
   slides[cur].className='slide'+(n>cur?' prev':'');
   cur=n;
   slides[cur].className='slide active';
+  slides[cur].scrollTop=0;
   document.querySelectorAll('.nav-dot').forEach((d,i)=>d.classList.toggle('active',i===cur));
+  document.querySelectorAll('.toc-item').forEach((t,i)=>t.classList.toggle('active',i===cur));
   counter.textContent=`${cur+1} / ${total}`;
   document.getElementById('prevBtn').disabled=cur===0;
   document.getElementById('nextBtn').disabled=cur===total-1;
 }
 function go(d){goTo(cur+d)}
 
+// TOC 토글
+function openToc(){tocOverlay.classList.add('open')}
+function closeToc(){tocOverlay.classList.remove('open')}
+function toggleToc(){tocOverlay.classList.contains('open')?closeToc():openToc()}
+
+document.getElementById('tocBtn').onclick=toggleToc;
+document.getElementById('tocClose').onclick=closeToc;
+tocOverlay.addEventListener('click',e=>{if(e.target===tocOverlay)closeToc()});
+
+// 클릭으로 슬라이드 넘기기
+document.getElementById('deck').addEventListener('click',e=>{
+  // 링크, 버튼, 입력요소, 네비, TOC 위 클릭은 무시
+  if(e.target.closest('a,button,input,select,.deck-nav,.toc-overlay'))return;
+  const x=e.clientX;
+  const w=window.innerWidth;
+  if(x<w*0.35){go(-1)}else{go(1)}
+});
+
 // 키보드
 document.addEventListener('keydown',e=>{
+  if(tocOverlay.classList.contains('open')){
+    if(e.key==='Escape'||e.key==='t'||e.key==='T')closeToc();
+    return;
+  }
   if(e.key==='ArrowRight'||e.key===' ')go(1);
   if(e.key==='ArrowLeft')go(-1);
+  if(e.key==='t'||e.key==='T')openToc();
+  if(e.key==='Escape')closeToc();
   if(e.key==='f'||e.key==='F'){
     document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen();
   }
+  // 숫자키 1~9 직접 이동
+  const num=parseInt(e.key);
+  if(num>=1&&num<=9&&num<=total)goTo(num-1);
+  if(e.key==='0'&&total>=10)goTo(9);
 });
 
 // 터치 스와이프
-let tx=0;
-document.addEventListener('touchstart',e=>{tx=e.touches[0].clientX},{passive:true});
+let tx=0,ty=0;
+document.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;ty=e.touches[0].clientY},{passive:true});
 document.addEventListener('touchend',e=>{
   const dx=e.changedTouches[0].clientX-tx;
-  if(Math.abs(dx)>50){dx<0?go(1):go(-1)}
+  const dy=e.changedTouches[0].clientY-ty;
+  if(Math.abs(dx)>Math.abs(dy)&&Math.abs(dx)>50){
+    dx<0?go(1):go(-1);
+  }
 });
 
 goTo(0);
