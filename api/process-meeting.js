@@ -1,7 +1,48 @@
+// ============================================================
 // 회의록 자동 생성 — 서버리스 함수
-// 두 가지 액션:
-//   X-Action: upload-chunk → 오디오 청크를 Vercel Blob에 임시 저장
-//   X-Action: process      → 모든 청크를 결합 → Gemini로 전사/요약 → Notion 페이지 생성
+// ============================================================
+//
+// [흐름]
+//   클라이언트(meeting-notes/app.js)에서 두 단계로 호출:
+//   1. upload-chunk (X-Action 헤더)
+//      → 오디오 청크(3.5MB 이하)를 Vercel Blob에 임시 저장
+//      → 1시간 녹음 ≈ 14MB → 4청크로 분할 업로드
+//   2. process (X-Action 헤더)
+//      → 모든 청크 결합 → Gemini Files API 업로드
+//      → Gemini 2.5 Flash로 한국어 전사 + 구조화 JSON 추출
+//      → Notion API로 "자동 회의록 DB"에 페이지 생성
+//      → Vercel Blob 청크 정리
+//
+// [핵심 설계 결정]
+//   - 청크 3.5MB 분할: Vercel Hobby 4.5MB 본문 한도 때문
+//   - Gemini Files API: 큰 오디오를 업로드 후 URI로 참조
+//   - responseSchema: JSON 구조를 강제해서 안정적 파싱
+//   - 용어집(fetchGlossary): Notion DB에서 활성 용어 조회 → 프롬프트에 삽입
+//     → Notion에서 용어 추가/편집하면 코드 수정 없이 즉시 반영
+//
+// [Notion DB 정보]
+//   - 자동 회의록 DB (NOTION_DATABASE_ID)
+//     속성: 이름(title), 회의 날짜(date), 회의 유형(select),
+//           레이블(multi_select: 전투/시스템/밸런스/UI),
+//           참석자(person, 수동), 회의록 작성자(person, 수동)
+//     페이지 서식: 기본 정보 / 후속 진행 업무 / 아젠다 / 논의 사항 / 결정 사항 / To-do
+//   - 용어집 DB (NOTION_GLOSSARY_DB_ID)
+//     속성: 용어(title), 설명(text), 카테고리(select), 활성(checkbox)
+//
+// [Enterprise 전환 시 변경 포인트]
+//   - Gemini → Claude API (오디오 직접 입력 지원)
+//   - Notion API 직접 호출 → MCP 커넥터로 대체
+//   - Vercel Blob → 불필요 (서버리스 자체가 불필요할 수 있음)
+//   - fetchGlossary() → Claude가 MCP로 용어집 DB 직접 조회
+//   - buildBlocks() → MCP가 Notion 마크다운으로 직접 생성
+//
+// [환경변수]
+//   GEMINI_API_KEY          — Google AI Studio에서 발급
+//   NOTION_TOKEN            — Notion Integration 토큰
+//   NOTION_DATABASE_ID      — 자동 회의록 DB ID
+//   NOTION_GLOSSARY_DB_ID   — 용어집 DB ID
+//   BLOB_READ_WRITE_TOKEN   — Vercel Blob 활성화 시 자동 등록
+// ============================================================
 
 import { GoogleGenAI, createUserContent, createPartFromUri } from '@google/genai';
 import { Client as NotionClient } from '@notionhq/client';
