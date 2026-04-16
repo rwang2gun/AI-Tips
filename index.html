@@ -353,15 +353,45 @@ nav{
   color:#ef4a5b;
 }
 
-/* Apps section grid (single column wide card) */
+/* Apps section */
 .apps-section{padding:60px 0 20px}
 .apps-grid{
   display:grid;
   grid-template-columns:1fr;
   gap:24px;
-  max-width:720px;
+  max-width:560px;
   margin:40px auto 0;
 }
+
+/* Compact app card */
+.app-compact{
+  border-radius:16px;overflow:hidden;
+  border:1px solid var(--border);background:var(--surface);
+  padding:24px 28px;
+  transition:all 0.3s ease;
+  text-decoration:none;color:var(--text);
+}
+.app-compact:hover{border-color:rgba(239,74,91,0.3);box-shadow:0 12px 40px rgba(239,74,91,0.06)}
+.app-compact-header{display:flex;align-items:center;gap:14px;margin-bottom:12px}
+.app-compact-icon{font-size:28px}
+.app-compact-title{font-family:'Outfit',sans-serif;font-weight:700;font-size:17px;letter-spacing:-0.01em}
+.app-compact-label{
+  font-size:10px;font-weight:600;letter-spacing:0.06em;
+  color:#ef4a5b;margin-left:auto;
+}
+.app-compact-desc{font-size:13px;color:var(--text-muted);line-height:1.6;margin-bottom:18px}
+.app-compact-actions{display:flex;gap:10px}
+.app-compact-btn{
+  flex:1;display:flex;align-items:center;justify-content:center;gap:6px;
+  padding:10px 16px;border-radius:10px;
+  font-size:13px;font-weight:500;text-decoration:none;
+  transition:all 0.15s;
+}
+.app-compact-btn:active{transform:scale(0.97)}
+.app-compact-btn.primary{background:#ef4a5b;color:#fff}
+.app-compact-btn.primary:hover{background:#d9404f}
+.app-compact-btn.secondary{background:var(--surface-2,#1c1b27);color:var(--text-muted);border:1px solid var(--border)}
+.app-compact-btn.secondary:hover{border-color:#ef4a5b;color:var(--text)}
 
 .card-banner-icon{
   position:relative;
@@ -689,53 +719,18 @@ footer a:hover{color:var(--text)}
   </div>
 
   <div class="apps-grid">
-    <a href="meeting-notes-deck.html" class="branch-card app reveal" style="transition-delay:0.1s;max-width:340px">
-      <div class="card-banner" style="height:140px">
-        <div class="bg-pattern"></div>
-        <div class="card-banner-glow"></div>
-        <div class="card-banner-icon" style="font-size:40px">📊</div>
+    <div class="app-compact reveal" style="transition-delay:0.1s">
+      <div class="app-compact-header">
+        <span class="app-compact-icon">🎙️</span>
+        <span class="app-compact-title">회의록 자동 생성기</span>
+        <span class="app-compact-label">VOICE → NOTION</span>
       </div>
-      <div class="card-body">
-        <div class="card-label">◆ CASE STUDY</div>
-        <h3>개발 사례 발표 자료</h3>
-        <p>Claude Code로 회의록 앱을 만든 과정을 11장 슬라이드로 정리.</p>
+      <div class="app-compact-desc">모바일에서 녹음하면 AI가 전사·요약하고 Notion에 회의록을 자동 생성합니다.</div>
+      <div class="app-compact-actions">
+        <a href="meeting-notes/" class="app-compact-btn primary">🎙️ 앱 열기</a>
+        <a href="meeting-notes-deck.html" class="app-compact-btn secondary">📊 발표 자료</a>
       </div>
-      <div class="card-cta">
-        <span class="card-cta-text">슬라이드 보기</span>
-        <span class="card-cta-arrow">→</span>
-      </div>
-    </a>
-
-    <a href="meeting-notes/" class="branch-card app reveal" style="transition-delay:0.2s">
-      <div class="card-banner">
-        <div class="bg-pattern"></div>
-        <div class="card-banner-glow"></div>
-        <div class="card-banner-icon">🎙️</div>
-      </div>
-      <div class="card-body">
-        <div class="card-label">◆ VOICE → NOTION</div>
-        <h3>회의록 자동 생성기</h3>
-        <p>모바일에서 회의를 녹음하면 Gemini가 전사·요약하고 Notion DB에 회의록 페이지로 저장합니다. 아젠다, 논의 사항, 결정 사항, To-do까지 자동 분류.</p>
-        <div class="card-stats">
-          <div class="card-stat">
-            <span class="card-stat-num">1</span>
-            <span class="card-stat-label">탭으로 시작</span>
-          </div>
-          <div class="card-stat">
-            <span class="card-stat-num">PWA</span>
-            <span class="card-stat-label">모바일 호환</span>
-          </div>
-          <div class="card-stat">
-            <span class="card-stat-num">∞</span>
-            <span class="card-stat-label">시간 길이</span>
-          </div>
-        </div>
-      </div>
-      <div class="card-cta">
-        <span class="card-cta-text">앱 열기</span>
-        <span class="card-cta-arrow">→</span>
-      </div>
-    </a>
+    </div>
   </div>
 </section>
 
