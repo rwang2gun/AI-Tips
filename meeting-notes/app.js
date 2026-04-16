@@ -208,7 +208,6 @@ async function processMeeting(blob) {
     let fileState = prepData.state;
     let fileUri = prepData.fileUri;
     let fileMimeType = prepData.fileMimeType;
-    let geminiDurationSec = prepData.durationSec;
     const maxPolls = 60; // 최대 2분 (2초 간격)
     for (let i = 0; i < maxPolls && fileState === 'PROCESSING'; i++) {
       els.processingText.textContent = `AI 파일 처리 중... (${i + 1}/${maxPolls})`;
@@ -229,40 +228,23 @@ async function processMeeting(blob) {
       fileState = chkData.state;
       fileUri = chkData.fileUri || fileUri;
       fileMimeType = chkData.fileMimeType || fileMimeType;
-      geminiDurationSec = chkData.durationSec || geminiDurationSec;
     }
 
     if (fileState !== 'ACTIVE') {
       throw new Error(`Gemini 파일 상태: ${fileState}`);
     }
 
-    // 3) transcribe — 10분 단위 세그먼트로 나눠서 전사 (각 호출 60초 한도 회피)
-    const recordedDurationSec = Math.floor((Date.now() - startedAt) / 1000);
-    const durationSec = geminiDurationSec || recordedDurationSec || 3600;
-    const SEGMENT_SEC = 600; // 10분
-    const numSegments = Math.max(1, Math.ceil(durationSec / SEGMENT_SEC));
-
-    for (let i = 0; i < numSegments; i++) {
-      const startSec = i * SEGMENT_SEC;
-      const endSec = Math.min((i + 1) * SEGMENT_SEC, durationSec);
-      els.processingText.textContent = `AI가 받아적는 중... (${i + 1}/${numSegments})`;
-      const trRes = await fetch('/api/process-meeting', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Action': 'transcribe',
-        },
-        body: JSON.stringify({
-          sessionId,
-          fileUri,
-          fileMimeType,
-          segmentIndex: i,
-          startOffsetSec: startSec,
-          endOffsetSec: endSec,
-        }),
-      });
-      if (!trRes.ok) throw new Error(`전사 실패 (${i + 1}/${numSegments}): ${await trRes.text()}`);
-    }
+    // 3) transcribe — 오디오 → 한국어 전사문 (Blob에 저장)
+    els.processingText.textContent = 'AI가 회의 내용을 받아적는 중...';
+    const trRes = await fetch('/api/process-meeting', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Action': 'transcribe',
+      },
+      body: JSON.stringify({ sessionId, fileUri, fileMimeType }),
+    });
+    if (!trRes.ok) throw new Error(`전사 실패: ${await trRes.text()}`);
 
     // 4) summarize — 전사문 → 구조화 JSON 요약 (Blob에 저장)
     els.processingText.textContent = '회의록 요약 중...';
