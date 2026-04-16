@@ -137,7 +137,10 @@ async function handleProcess(req, res) {
     return jsonResponse(res, 500, { error: `Gemini file state: ${fileInfo.state}` });
   }
 
-  // 3. Gemini 호출 — 구조화된 JSON으로 회의록 추출
+  // 3. Notion 용어집 조회
+  const glossaryText = await fetchGlossary();
+
+  // 4. Gemini 호출 — 구조화된 JSON으로 회의록 추출
   const today = new Date().toISOString().slice(0, 10);
   const meetingMeta = {
     requestedTitle: title,
@@ -150,18 +153,19 @@ async function handleProcess(req, res) {
 
 [메타 정보]
 ${JSON.stringify(meetingMeta, null, 2)}
-
+${glossaryText}
 [작성 규칙]
 1. 모든 응답은 한국어로 작성
 2. 발언자 구분은 하지 않고 내용 중심으로 정리
 3. 게임 기획 관련 회의일 가능성이 높음 (전투, 시스템, 밸런스, UI 등의 용어 자주 등장)
-4. requestedTitle이 있으면 그것을 title로 사용. 없으면 회의 내용을 요약한 30자 이내 제목 생성
-5. requestedMeetingType이 있으면 그것을 meetingType으로 사용. 없으면 내용에 맞게 선택
-6. labels는 회의에서 다룬 주제에 해당하는 것만 (없으면 빈 배열)
-7. agenda: 회의 시작 시 명시적으로 다룬 안건. 없으면 빈 배열
-8. discussion: 실제 오간 논의 (가장 중요)
-9. decisions: 명확히 합의/결정된 사항만
-10. todos: 누가 무엇을 언제까지 할지 명시된 액션 아이템`;
+4. 위 용어집에 있는 단어가 음성에서 들리면 반드시 해당 표기를 사용할 것
+5. requestedTitle이 있으면 그것을 title로 사용. 없으면 회의 내용을 요약한 30자 이내 제목 생성
+6. requestedMeetingType이 있으면 그것을 meetingType으로 사용. 없으면 내용에 맞게 선택
+7. labels는 회의에서 다룬 주제에 해당하는 것만 (없으면 빈 배열)
+8. agenda: 회의 시작 시 명시적으로 다룬 안건. 없으면 빈 배열
+9. discussion: 실제 오간 논의 (가장 중요)
+10. decisions: 명확히 합의/결정된 사항만
+11. todos: 누가 무엇을 언제까지 할지 명시된 액션 아이템`;
 
   const result = await genAI.models.generateContent({
     model: 'gemini-2.5-flash',
@@ -179,10 +183,10 @@ ${JSON.stringify(meetingMeta, null, 2)}
 
   const meetingData = JSON.parse(result.text);
 
-  // 4. Notion 페이지 생성
+  // 5. Notion 페이지 생성
   const notionUrl = await createNotionPage(meetingData, today);
 
-  // 5. 청크 정리 (Gemini 파일은 48시간 후 자동 삭제됨)
+  // 6. 청크 정리 (Gemini 파일은 48시간 후 자동 삭제됨)
   await cleanupChunks(prefix);
 
   return jsonResponse(res, 200, {
@@ -452,6 +456,40 @@ function buildBlocks(data) {
   });
 
   return blocks;
+}
+
+// ------- 용어집 조회 -------
+
+async function fetchGlossary() {
+  const glossaryDbId = process.env.NOTION_GLOSSARY_DB_ID;
+  if (!glossaryDbId) return '';
+
+  try {
+    const notion = new NotionClient({ auth: process.env.NOTION_TOKEN });
+    const response = await notion.databases.query({
+      database_id: glossaryDbId,
+      filter: {
+        property: '활성',
+        checkbox: { equals: true },
+      },
+      sorts: [{ property: '카테고리', direction: 'ascending' }],
+    });
+
+    if (!response.results.length) return '';
+
+    const terms = response.results.map((page) => {
+      const p = page.properties;
+      const term = p['용어']?.title?.[0]?.plain_text || '';
+      const desc = p['설명']?.rich_text?.[0]?.plain_text || '';
+      const cat = p['카테고리']?.select?.name || '';
+      return `- ${term}: ${desc}${cat ? ` [${cat}]` : ''}`;
+    });
+
+    return `\n[용어집 — 아래 용어가 음성에서 들리면 정확한 표기를 사용하세요]\n${terms.join('\n')}\n`;
+  } catch (e) {
+    console.warn('[fetchGlossary] failed:', e?.message);
+    return '';
+  }
 }
 
 // ------- 청크 정리 -------
