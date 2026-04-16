@@ -14,7 +14,9 @@
 //        NOTION_GLOSSARY_DB_ID=...     (없으면 용어집 없이 요약)
 //
 //   2) 실행:
-//        node --env-file=.env scripts/process-recording-locally.js <audio-file> [--title "..."] [--type "킥오프|내부 논의|실무 논의|기타"] [--summarize-model=gemini-2.5-pro]
+//        node --env-file=.env scripts/process-recording-locally.js <audio-file> [--title "..."] [--type "킥오프|내부 논의|실무 논의|기타"] [--summarize-model=gemini-2.5-pro] [--transcribe-only]
+//
+//      --transcribe-only: 전사만 하고 요약 단계 스킵 (세그먼트별 순차 전사용)
 //
 //   [모델 전략]
 //     - 전사 (Step 1): gemini-2.5-flash (저렴 + 단순 작업에 충분)
@@ -138,6 +140,16 @@ async function withRetry(label, fn, maxRetries = 5) {
   }
 }
 
+// ------- 유의어 사전 로드 (전사/요약 양쪽에서 사용) -------
+// 한 번만 fetch해서 두 단계 모두에 주입. 실패해도 전사/요약은 계속 진행.
+const synonyms = await fetchSynonyms();
+if (synonyms.length) {
+  const strict = synonyms.filter((s) => s.strategy === '무조건 치환').length;
+  const conditional = synonyms.filter((s) => s.strategy === '맥락 조건부').length;
+  const manual = synonyms.filter((s) => s.strategy === '수동 확인').length;
+  console.log(`유의어 사전: 총 ${synonyms.length}개 (무조건=${strict}, 조건부=${conditional}, 수동=${manual})`);
+}
+
 // ------- Step 1: 전사 -------
 
 let transcript;
@@ -171,6 +183,7 @@ if (existsSync(transcriptPath) && !flags.has('--force-retranscribe')) {
   }
 
   console.log('      Generating transcript (this can take several minutes for long audio)...');
+  const synonymHint = buildTranscribeSynonymHint(synonyms);
   const transcribePrompt = `첨부된 한국어 회의 녹음을 정확히 전사하세요.
 
 [규칙]
@@ -178,8 +191,9 @@ if (existsSync(transcriptPath) && !flags.has('--force-retranscribe')) {
 2. 발언자 구분은 하지 말고 발언 순서대로 작성
 3. "음", "어" 같은 군더더기는 생략하되 실제 의미 있는 말은 모두 포함
 4. 잘 안 들리는 구간은 [불분명] 으로 표시
-5. 문장 단위로 줄바꿈하여 가독성 확보
-6. 해설이나 요약 없이 들은 말만 옮겨 쓸 것`;
+5. **한 문장이 끝날 때마다 반드시 줄바꿈**. 마침표(.)·물음표(?)·느낌표(!)·말줄임표(…) 바로 뒤에서 개행(\\n)할 것
+6. 한 줄이 100자를 넘지 않도록 유지
+7. 해설이나 요약 없이 들은 말만 옮겨 쓸 것${synonymHint}`;
 
   const transcribeStart = Date.now();
   const transcribeResult = await withRetry('transcribe', () => genAI.models.generateContent({
@@ -202,6 +216,17 @@ if (existsSync(transcriptPath) && !flags.has('--force-retranscribe')) {
   const transcribeElapsed = ((Date.now() - transcribeStart) / 1000).toFixed(1);
 
   transcript = transcribeResult.text || '';
+  // 후처리: Gemini가 줄바꿈 규칙을 무시하고 한 문장으로 붙여서 반환하는 경우
+  // 문장 끝 부호 뒤에서 강제로 개행 (숫자 목록 "1." "2." 오인 방지 위해 뒤에 한글/영문 올 때만)
+  if (transcript.trim()) {
+    transcript = enforceSentenceBreaks(transcript);
+    // 유의어 사전의 "무조건 치환" 항목을 후처리로 교정 (오인식 → 정답 용어)
+    const { text: corrected, applied } = applySynonymReplacements(transcript, synonyms);
+    transcript = corrected;
+    if (applied.length) {
+      console.log(`      유의어 교정 ${applied.length}건: ${applied.slice(0, 5).map((a) => `${a.from}→${a.to}(${a.count})`).join(', ')}${applied.length > 5 ? ', ...' : ''}`);
+    }
+  }
   if (!transcript.trim()) {
     console.error('ERROR: Empty transcript returned by Gemini.');
     console.error('');
@@ -230,6 +255,13 @@ if (existsSync(transcriptPath) && !flags.has('--force-retranscribe')) {
 
 // ------- Step 2: 요약 -------
 
+// --transcribe-only 플래그가 있으면 전사만 하고 종료 (세그먼트 분할 워크플로우용)
+if (flags.has('--transcribe-only')) {
+  console.log(`\n[done] Transcribe-only mode. Skipping summarize.`);
+  console.log(`       Transcript saved to: ${transcriptPath}`);
+  process.exit(0);
+}
+
 let result;
 if (existsSync(resultPath) && !flags.has('--force-resummarize')) {
   const raw = await fs.readFile(resultPath, 'utf-8');
@@ -250,11 +282,12 @@ if (existsSync(resultPath) && !flags.has('--force-resummarize')) {
     date: today,
   };
 
+  const summarizeSynonymHint = buildSummarizeSynonymHint(synonyms);
   const summarizePrompt = `당신은 게임 기획 회의록 정리 전문가입니다. 아래 한국어 회의 전사문을 바탕으로 회의록을 작성하세요.
 
 [메타 정보]
 ${JSON.stringify(meetingMeta, null, 2)}
-${glossaryText}
+${glossaryText}${summarizeSynonymHint}
 [전사문]
 ${transcript}
 
@@ -318,6 +351,137 @@ console.log(`\nWhen satisfied, create the Notion page:`);
 console.log(`   node --env-file=.env scripts/upload-to-notion.js "${resultPath}"`);
 
 // ------- Helpers -------
+
+// 유의어 사전 DB 조회 (Notion). 실패 시 빈 배열 반환.
+// 반환 형태: [{ 정답용어, 오인식표현[], 치환전략, 카테고리, 맥락메모 }, ...]
+async function fetchSynonyms() {
+  const synonymDbId = process.env.NOTION_SYNONYM_DB_ID;
+  if (!synonymDbId || !process.env.NOTION_TOKEN) return [];
+
+  try {
+    const notion = new NotionClient({ auth: process.env.NOTION_TOKEN });
+    const response = await notion.databases.query({
+      database_id: synonymDbId,
+      filter: {
+        property: '활성',
+        checkbox: { equals: true },
+      },
+      page_size: 200,
+    });
+
+    const synonyms = response.results.map((page) => {
+      const p = page.properties;
+      const correct = p['정답 용어']?.title?.[0]?.plain_text?.trim() || '';
+      const rawMisrec = p['오인식 표현']?.rich_text?.[0]?.plain_text || '';
+      // 쉼표(또는 전각 쉼표) 구분, 공백 제거, 빈 항목 제외
+      const misrecs = rawMisrec
+        .split(/[,，]/)
+        .map((s) => s.trim())
+        .filter((s) => s && s !== correct);
+      const strategy = p['치환 전략']?.select?.name || '수동 확인';
+      const category = p['카테고리']?.select?.name || '';
+      const note = p['맥락 메모']?.rich_text?.[0]?.plain_text || '';
+      return { correct, misrecs, strategy, category, note };
+    }).filter((s) => s.correct && s.misrecs.length > 0);
+
+    return synonyms;
+  } catch (e) {
+    console.warn(`      [fetchSynonyms] failed: ${e?.message}`);
+    return [];
+  }
+}
+
+// 전사 프롬프트에 주입할 유의어 힌트.
+// 주의: 오인식 표현 예시를 프롬프트에 넣으면 프라이밍 효과로 Gemini가 그 표기를 따라 쓰는 역효과 발생.
+// 따라서 "정답 용어"만 간단히 나열하고, 오인식 → 정답 변환은 후처리 regex에만 맡김.
+function buildTranscribeSynonymHint(synonyms) {
+  const relevant = synonyms.filter((s) => s.strategy === '무조건 치환' || s.strategy === '맥락 조건부');
+  if (!relevant.length) return '';
+  const terms = relevant.map((s) => s.correct).join(', ');
+  return `
+
+[고유 용어]
+이 회의에는 다음 용어가 자주 등장합니다. 비슷하게 들리는 단어는 이 표기로 통일하세요:
+${terms}`;
+}
+
+// 요약 프롬프트에 주입할 유의어 힌트. 두 섹션으로 구성:
+//
+// 1. [전사 오류 보정 가이드] — 오인식 표현 → 정답 용어 매핑 전체
+//    전사 후처리(regex)가 놓친 표현(맥락 조건부 / 미등록 변형)을 요약 단계
+//    Gemini가 맥락 기반으로 복구할 수 있게 매핑 정보 제공.
+//    주의: 전사 프롬프트에서는 프라이밍 역효과 때문에 오인식 예시 넣지 않지만,
+//    요약은 기존 텍스트 해석이라 역효과 거의 없음.
+//
+// 2. [유의어 맥락 메모] — 사람/AI가 판단하는 데 도움되는 추가 설명.
+//    (치환 전략이 "수동 확인"이어도 맥락 파악엔 필요하므로 포함)
+function buildSummarizeSynonymHint(synonyms) {
+  if (!synonyms.length) return '';
+
+  // 1. 오인식 → 정답 매핑 (맥락 조건부는 자동 치환 안 됐을 가능성 있음)
+  const mappingLines = synonyms
+    .filter((s) => s.misrecs.length > 0 && s.strategy !== '수동 확인')
+    .map((s) => {
+      const variants = s.misrecs.map((v) => `"${v}"`).join(', ');
+      const cat = s.category ? ` [${s.category}]` : '';
+      return `- ${variants} → **${s.correct}**${cat}`;
+    });
+
+  // 2. 맥락 메모
+  const noteLines = synonyms
+    .filter((s) => s.note)
+    .map((s) => `- ${s.correct}${s.category ? ` [${s.category}]` : ''}: ${s.note}`);
+
+  const sections = [];
+  if (mappingLines.length) {
+    sections.push(`[전사 오류 보정 가이드 — 전사문에 아래 표기가 남아 있으면 괄호 안 정답 용어로 이해하고 요약에 반영]
+${mappingLines.join('\n')}`);
+  }
+  if (noteLines.length) {
+    sections.push(`[유의어 맥락 메모]
+${noteLines.join('\n')}`);
+  }
+  if (!sections.length) return '';
+  return `\n\n${sections.join('\n\n')}\n`;
+}
+
+// 유의어 사전의 "무조건 치환" 전략 항목으로 전사문을 교정.
+// 한글 단어 경계 근사: 앞뒤가 한글이면 매칭 제외 (부분매칭 방지).
+// 반환: { text: 교정된 전문, applied: [{ from, to, count }, ...] }
+function applySynonymReplacements(text, synonyms) {
+  const strictOnes = synonyms.filter((s) => s.strategy === '무조건 치환');
+  const applied = [];
+  let result = text;
+  for (const syn of strictOnes) {
+    for (const variant of syn.misrecs) {
+      if (!variant || variant === syn.correct) continue;
+      // 한글 양옆 경계 + escape된 변형 단어 매칭
+      const escaped = variant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const re = new RegExp(`(?<![가-힣A-Za-z])${escaped}(?![가-힣A-Za-z])`, 'g');
+      const matches = result.match(re);
+      if (matches?.length) {
+        result = result.replace(re, syn.correct);
+        applied.push({ from: variant, to: syn.correct, count: matches.length });
+      }
+    }
+  }
+  return { text: result, applied };
+}
+
+// Gemini가 줄바꿈 규칙을 무시하고 한 덩어리로 반환하는 케이스 방어.
+// 문장 끝 부호(. ! ? …) + 선택적 닫는 따옴표/괄호 뒤에 공백이 오고,
+// 그 다음 문자가 한글/영문일 때만 줄바꿈 삽입.
+// 숫자 목록("1. ", "2. ")은 뒤에 숫자가 오지 않으니 자연스럽게 제외됨.
+function enforceSentenceBreaks(text) {
+  return text
+    .split('\n')
+    .map((line) => {
+      // 한 줄이 짧으면 그대로 유지 (이미 제대로 줄바꿈된 것)
+      if (line.length < 80) return line;
+      return line.replace(/([.!?…]["'」』)\]]?)[ \t]+(?=[가-힣A-Za-z])/g, '$1\n');
+    })
+    .join('\n');
+}
 
 async function fetchGlossary() {
   const glossaryDbId = process.env.NOTION_GLOSSARY_DB_ID;

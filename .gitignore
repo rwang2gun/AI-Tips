@@ -13,3 +13,7 @@ recovered-*.mp4
 recovered-*.ogg
 recovered-*.transcript.txt
 recovered-*.result.json
+recovered-*.term-candidates.txt
+
+# npm lock 파일은 기존 관례상 리포에 포함하지 않음
+package-lock.json
