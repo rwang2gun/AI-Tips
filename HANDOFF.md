@@ -128,25 +128,30 @@ AI-Tips/
 
 ---
 
-## 📊 현재 상태 (2026-04-15 기준)
+## 📊 현재 상태 (2026-04-16 갱신)
 
 | 항목 | 상태 |
 |------|------|
 | 코드 작성 | ✅ 완료 |
-| GitHub 푸시 | ✅ 완료 (`9723388`) |
-| Vercel 배포 | ⏳ 사용자가 SETUP.md 따라 진행 예정 |
-| 환경변수 등록 | ⏳ 미정 |
-| Vercel Blob 활성화 | ⏳ 미정 |
-| Notion Integration 권한 | ⏳ 미정 |
-| 첫 테스트 (1~2분 녹음) | ⏳ 미정 |
-| 1시간 회의 실측 | ⏳ 미정 |
+| PWA 아이콘 추가 | ✅ 완료 (icon-192.png, icon-512.png) |
+| GitHub 푸시 | ✅ 완료 |
+| Vercel 배포 | ✅ 완료 |
+| 환경변수 등록 | ✅ 완료 |
+| Vercel Blob 활성화 | ✅ 완료 |
+| Notion Integration 권한 | ✅ 완료 |
+| 모바일 PWA 설치 | ✅ 완료 |
+| 짧은 테스트 녹음 (30~40초) | ✅ 성공 — Notion에 회의록 자동 생성 확인 |
+| 스터디 발표 슬라이드 | ✅ 완료 (meeting-notes-deck.html) |
+| 1시간 실제 회의 | ⏳ 미검증 |
 
 ---
 
 ## ⚠️ 알려진 한계 / TODO
 
+### 완료됨
+- [x] PWA 아이콘 (`meeting-notes/icon-192.png`, `icon-512.png`)
+
 ### 미작성
-- [ ] PWA 아이콘 (`meeting-notes/icon-192.png`, `icon-512.png`)
 - [ ] Service Worker (오프라인 캐싱)
 - [ ] favicon
 
@@ -169,10 +174,10 @@ AI-Tips/
 
 사용자가 우선순위 정하면 이걸로 진행:
 
-1. **PWA 아이콘 생성** (SVG → PNG 변환, 5분)
-2. **첫 테스트 후 발견된 버그 수정**
-3. **실제 1시간 회의 처리 검증 + 필요시 chunked Gemini upload로 전환**
-4. **화자 구분 옵션 추가** (AssemblyAI 통합)
+1. **실제 1시간 회의 처리 검증** + 필요시 chunked Gemini upload로 전환
+2. **화자 구분 옵션 추가** (AssemblyAI 통합, 유료)
+3. **Service Worker** 추가 (오프라인 캐싱)
+4. **처리 진행률 SSE/스트리밍**
 5. **다른 "Built with Claude" 앱 추가** (index.html에 새 카드)
 
 ---
@@ -202,10 +207,16 @@ AI-Tips/
 
 ## 📚 참고 링크
 
+### 관리 대시보드
+- [Vercel Dashboard](https://vercel.com/rwang2guns-projects/ai-tips) — 배포 관리, 환경변수, Blob, 로그
+- [Gemini API 사용량](https://aistudio.google.com/u/1/usage?timeRange=last-28-days) — API 호출 횟수, 무료 한도 확인
+- [Notion Integrations 관리](https://www.notion.so/my-integrations) — Integration 토큰 관리
+
+### 프로젝트
 - [GitHub 리포](https://github.com/rwang2gun/AI-Tips)
 - [SETUP.md (배포 체크리스트)](./SETUP.md)
-- [회의록 페이지 (Notion)](https://www.notion.so/343b23cf372080548f58e817d7f6d7dd)
-- [자동 회의록 DB (Notion)](https://www.notion.so/343b23cf3720805a885aef6795242b77)
-- [회의록 서식 템플릿 (Notion)](https://www.notion.so/343b23cf372080fab2e1e4213af0cee1)
-- [Gemini API 키 발급](https://aistudio.google.com/apikey)
-- [Notion Integrations 관리](https://www.notion.so/my-integrations)
+
+### Notion
+- [회의록 페이지](https://www.notion.so/343b23cf372080548f58e817d7f6d7dd)
+- [자동 회의록 DB](https://www.notion.so/343b23cf3720805a885aef6795242b77)
+- [회의록 서식 템플릿](https://www.notion.so/343b23cf372080fab2e1e4213af0cee1)
