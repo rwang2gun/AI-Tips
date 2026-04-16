@@ -162,12 +162,31 @@ if (existsSync(transcriptPath) && !flags.has('--force-retranscribe')) {
         createPartFromUri(fileInfo.uri, fileInfo.mimeType),
       ]),
     ],
+    // 60분 전사는 수만 토큰 나올 수 있어서 기본 8K 한도면 MAX_TOKENS로 잘림.
+    config: { maxOutputTokens: 65536 },
   });
   const transcribeElapsed = ((Date.now() - transcribeStart) / 1000).toFixed(1);
 
   transcript = transcribeResult.text || '';
   if (!transcript.trim()) {
     console.error('ERROR: Empty transcript returned by Gemini.');
+    console.error('');
+    console.error('--- Diagnostic info ---');
+    const cand = transcribeResult.candidates?.[0];
+    console.error(`finishReason:       ${cand?.finishReason ?? '(unknown)'}`);
+    console.error(`safetyRatings:      ${JSON.stringify(cand?.safetyRatings ?? [], null, 2)}`);
+    console.error(`promptFeedback:     ${JSON.stringify(transcribeResult.promptFeedback ?? null, null, 2)}`);
+    console.error(`usageMetadata:      ${JSON.stringify(transcribeResult.usageMetadata ?? null, null, 2)}`);
+    console.error(`raw candidates[0]:  ${JSON.stringify(cand ?? null, null, 2)?.slice(0, 1500)}`);
+    console.error('-----------------------');
+    console.error('');
+    console.error('가능한 원인:');
+    console.error('  1. SAFETY — finishReason이 SAFETY면 안전필터 차단. 회의 내용에 민감 키워드 있음.');
+    console.error('  2. MAX_TOKENS — 출력 토큰 한도 초과. 프롬프트에 maxOutputTokens 명시 필요.');
+    console.error('  3. RECITATION — 저작권/학습 데이터 리사이테이션 차단.');
+    console.error('  4. 파일 문제 — 오디오 디코딩 실패. 파일을 직접 재생해서 소리 나는지 확인.');
+    console.error('');
+    console.error('참고: recovered-*.webm을 Windows Media Player/VLC로 열어서 재생되는지 확인하세요.');
     process.exit(1);
   }
 
