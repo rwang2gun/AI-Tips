@@ -14,6 +14,12 @@
 | [scripts/process-recording-locally.js](scripts/process-recording-locally.js) | 704 | API 파이프라인과 거의 동일한 로직 복붙 |
 | [scripts/upload-to-notion.js](scripts/upload-to-notion.js) | 453 | `buildBlocks` 등 API와 중복, 주석에도 "동기화 필요" 경고 |
 
+## 개선 희망 사항
+
+- **녹음 일시‑정지 기능**: UI에 `pauseBtn`(일시정지)와 `stopBtn`(중단) 버튼을 추가. 일시정지는 현재 세그먼트를 중단하고, 다음 시작 시 새로운 세그먼트 번호로 이어짐. 중단은 기존 로직과 동일하게 전체 녹음을 종료하고 `processMeeting`을 호출.
+- **로그 보존**: Vercel 무료 플랜 로그 보관 1시간 제한을 보완하기 위해, 오류 발생 시 `error` 객체와 스택 트레이스를 `logs/` 디렉터리 아래 `session-<sessionId>-<timestamp>.txt` 로 저장하고 Vercel Blob에 업로드. `lib/logging.js` 모듈에 `logError(sessionId, err)` 함수를 제공하고, 각 핸들러 `catch` 블록에서 호출하도록 함.
+
+
 ## 코드 중복 분석
 
 ### 순수 복붙 (통합 필요)
@@ -153,4 +159,18 @@ tests/                         # NEW
 4. `node:test` 적절? 의존성 주입이 과한가?
 5. 놓친 위험 — 특히 recover.html 호환.
 6. Phase D 분할 — action당 commit 가치 있나?
+
+## 추가 권고
+
+- **ESLint + madge 순환 검사**: CI 파이프라인에 `eslint`와 `madge --circular`를 추가해 import 오류와 순환 의존성을 사전에 차단합니다.
+- **Snapshot 테스트 도입**: `page-builder`와 같은 복잡 UI 빌더에는 `snap-shot-it`(또는 `jest-snapshot`)을 사용해 구조 변화를 빠르게 감지합니다.
+- **CI 환경 변수 검증**: `dotenv` 로드 후 `node scripts/verify-env.js` 같은 스크립트로 필수 env 변수(`GEMINI_API_KEY`, `NOTION_TOKEN` 등) 존재 여부를 CI에서 확인합니다.
+- **버전 관리**: `package.json`에 `engines: { "node": ">=20" }`와 `npm version`을 활용해 `v1.2.0‑refactor` 같은 semver 태그를 자동 생성합니다.
+- **Warm‑up 엔드포인트 (옵션)**: `/api/warm` 라우터를 추가해 Vercel cold‑start 시 Gemini 클라이언트를 미리 초기화하도록 할 수 있습니다.
+- **madge 시각화**: `npm run dep-graph` 스크립트(`madge --image deps.png src`)를 CI에 포함해 모듈 의존성 그래프를 자동 생성하고 리뷰에 첨부합니다.
+- **CI lint 단계**: `npm run lint`를 `npm test` 앞에 실행해 코드 스타일·잠재 오류를 조기에 발견합니다.
+
+이 권고 사항들을 `REFACTOR‑PLAN.md`에 포함하면 리팩터링 진행 시 **품질 보증**과 **리스크 최소화**가 크게 강화됩니다.
+
+
 7. 하네스 엔지니어링 관점 추가 제안.
