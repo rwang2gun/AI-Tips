@@ -104,4 +104,4 @@ console.log(`Estimated duration at 32kbps: ~${estimatedMinutes} minutes`);
 console.log('');
 console.log('Next steps:');
 console.log(`  - Play to verify: open "${outputPath}" in any audio player`);
-console.log(`  - See RECOVERY-PLAN.md for next processing steps`);
+console.log(`  - See meeting-notes/docs/RECOVERY-PLAN.md for next processing steps`);

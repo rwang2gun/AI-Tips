@@ -10,9 +10,9 @@
 
 | 파일 | 줄수 | 문제 |
 |---|---|---|
-| [api/process-meeting.js](api/process-meeting.js) | 1111 | 9개 액션 핸들러 + 공통 유틸 + 프롬프트 + Notion 빌더 모두 한 파일 |
-| [scripts/process-recording-locally.js](scripts/process-recording-locally.js) | 704 | API 파이프라인과 거의 동일한 로직 복붙 |
-| [scripts/upload-to-notion.js](scripts/upload-to-notion.js) | 453 | `buildBlocks` 등 API와 중복, 주석에도 "동기화 필요" 경고 |
+| [api/process-meeting.js](../../api/process-meeting.js) | 1111 | 9개 액션 핸들러 + 공통 유틸 + 프롬프트 + Notion 빌더 모두 한 파일 |
+| [scripts/process-recording-locally.js](../../scripts/process-recording-locally.js) | 704 | API 파이프라인과 거의 동일한 로직 복붙 |
+| [scripts/upload-to-notion.js](../../scripts/upload-to-notion.js) | 453 | `buildBlocks` 등 API와 중복, 주석에도 "동기화 필요" 경고 |
 
 ## 개선 희망 사항
 
@@ -35,9 +35,9 @@
 - **세그먼트 병합**: API만 필요 (클라이언트가 5분 단위 분할)
 - **타임아웃**: 로컬 undici 무제한, API 60초 제약
 
-### [api/process-meeting.js](api/process-meeting.js) 액션 목록
+### [api/process-meeting.js](../../api/process-meeting.js) 액션 목록
 - `upload-chunk`, `prepare-segment`, `check-file`, `transcribe-segment`, `merge-transcripts`, `summarize`, `finalize-notion`
-- legacy: `prepare`, `transcribe` — [meeting-notes/recover.html](meeting-notes/recover.html) 호환용 (삭제 불가)
+- legacy: `prepare`, `transcribe` — [meeting-notes/recover.html](../recover.html) 호환용 (삭제 불가)
 
 ## 목표 디렉토리 구조
 
@@ -115,7 +115,7 @@ tests/                         # NEW
 | **A** | `lib/schemas`, `lib/prompts`, `lib/glossary`, `lib/synonyms`, `lib/guide` 추출 | 단위 테스트 + Codex 리뷰 |
 | **B** | `lib/clients/*`, `lib/notion/file-upload`, `lib/audio/chunking`, `lib/transcript/post-process`, `lib/http/body-parser` | 단위 테스트 + Codex 리뷰 |
 | **C** | `lib/notion/page-builder` (buildBlocks 통합 — 가장 큰 중복) | 스냅샷 테스트 + Codex 리뷰 |
-| **D** | `api/handlers/*` 분리 + [api/process-meeting.js](api/process-meeting.js) 라우터화 | 핸들러 통합 테스트 + Codex 리뷰 |
+| **D** | `api/handlers/*` 분리 + [api/process-meeting.js](../../api/process-meeting.js) 라우터화 | 핸들러 통합 테스트 + Codex 리뷰 |
 | **E** | `scripts/*` 가 `lib/*` 사용하도록 변환 | 수동 실행 검증 + Codex 리뷰 |
 
 ## 테스트 전략
@@ -130,7 +130,7 @@ tests/                         # NEW
 
 - Vercel 함수 entry 그대로: `/api/process-meeting`, `/api/version`
 - 액션 이름 그대로 (`upload-chunk`, `prepare-segment`, ...)
-- legacy `prepare`/`transcribe` 보존 ([meeting-notes/recover.html](meeting-notes/recover.html) 호환)
+- legacy `prepare`/`transcribe` 보존 ([meeting-notes/recover.html](../recover.html) 호환)
 - 환경변수 그대로
 - Notion DB 스키마 그대로
 
@@ -146,7 +146,7 @@ tests/                         # NEW
 
 | 위험 | 완화 |
 |---|---|
-| [meeting-notes/recover.html](meeting-notes/recover.html) 기능 깨짐 | legacy 핸들러를 `api/handlers/legacy/`에 보존, 동작 변경 X |
+| [meeting-notes/recover.html](../recover.html) 기능 깨짐 | legacy 핸들러를 `api/handlers/legacy/`에 보존, 동작 변경 X |
 | import 경로 오류 | 각 Phase 후 `node --check api/*.js scripts/*.js` |
 | Gemini 싱글톤이 serverless cold start에서 문제? | 팩토리 패턴 + lazy init, 핸들러마다 `getClient()` 호출 |
 | Phase D 한 번에 1111줄 분리 — 리뷰 어려움 | action당 1 commit으로 쪼개서 작업 (리뷰 단위 축소) |

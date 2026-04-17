@@ -2,7 +2,7 @@
 
 새 Claude 세션 (claude.ai 웹 또는 PC Claude Code)에서 이 프로젝트를 이어 작업할 때 가장 먼저 읽는 문서.
 
-> 새 세션 시작할 때 이 한 줄로 충분: **"이 리포의 HANDOFF.md 읽고 이어서 작업해줘. https://github.com/rwang2gun/AI-Tips"**
+> 새 세션 시작할 때 이 한 줄로 충분: **"이 리포의 meeting-notes/docs/HANDOFF.md 읽고 이어서 작업해줘. https://github.com/rwang2gun/AI-Tips"**
 
 ---
 
@@ -76,20 +76,30 @@ AI-Tips/
 ├── meeting-notes/
 │   ├── index.html      # 녹음 UI (녹음 버튼 + 타이머 + 시각화)
 │   ├── app.js          # MediaRecorder + 청크 분할 업로드 로직
-│   ├── style.css       # 다크 테마 (메인과 통일: --bg #0c0b10, --accent #7c6aef)
-│   └── manifest.json   # PWA 매니페스트 (아이콘 PNG는 미작성, TODO)
+│   ├── recover.html    # 실패 세션 재처리 페이지
+│   ├── style.css       # 다크 테마
+│   ├── manifest.json   # PWA 매니페스트
+│   └── docs/           # 회의록 앱 관련 문서 모음
+│       ├── SETUP.md            # 9단계 배포 체크리스트
+│       ├── HANDOFF.md          # 지금 읽는 이 문서
+│       ├── WORK-LOG.md         # 작업 히스토리 (PR별 상세 링크)
+│       ├── MEETING-NOTES-PIPELINE.md  # 현재 7단계 파이프라인 명세
+│       ├── RECOVERY-PLAN.md    # 4단계 복구/개선 계획
+│       ├── REFACTOR-PLAN.md    # 모듈 리팩터 계획
+│       └── work_log_*.md       # PR별/이벤트별 상세 (17개)
 │
 ├── api/
-│   └── process-meeting.js  # 단일 함수, X-Action 헤더로 분기
+│   ├── process-meeting.js      # 서버리스: 7단계 파이프라인 + legacy 3단계
+│   └── version.js              # 배포 버전 배지용
 │
-├── package.json        # @google/genai, @notionhq/client, @vercel/blob
+├── scripts/                    # 로컬 전사/요약/복구 스크립트 (7개)
+├── shared/version-badge.js     # 모든 페이지 우하단 버전 배지
+│
+├── package.json        # @google/genai, @notionhq/client, @vercel/blob, ffmpeg-static
 ├── vercel.json         # maxDuration 60s, no-store 헤더
 ├── .env.example        # 환경변수 템플릿
 ├── .gitignore
-│
-├── README.md           # 개요
-├── SETUP.md            # 9단계 배포 체크리스트 (사용자가 실제 따라가는 문서)
-└── HANDOFF.md          # 지금 읽는 이 문서
+└── README.md           # 개요
 ```
 
 ---

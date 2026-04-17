@@ -3,7 +3,7 @@
 Claude × Notion 활용 가이드 + 실제로 만들어본 앱 모음.
 
 > 🤖 **새 Claude 세션에서 이 프로젝트를 이어 작업하시나요?**  
-> [HANDOFF.md](./HANDOFF.md)를 먼저 읽으세요. 아키텍처, 설계 결정, 현재 상태가 모두 정리되어 있습니다.
+> [meeting-notes/docs/HANDOFF.md](./meeting-notes/docs/HANDOFF.md)를 먼저 읽으세요. 아키텍처, 설계 결정, 현재 상태가 모두 정리되어 있습니다.
 
 ---
 
@@ -31,22 +31,40 @@ AI-Tips/
 ├── meeting-notes/                     # PWA — 회의록 자동 생성기
 │   ├── index.html                     # 녹음 UI
 │   ├── app.js                         # MediaRecorder + 청크 업로드
+│   ├── recover.html                   # 실패 세션 재처리 페이지
 │   ├── style.css                      # 다크 테마
 │   ├── manifest.json                  # PWA 매니페스트
-│   ├── icon-192.png                   # 앱 아이콘
-│   └── icon-512.png                   # 앱 아이콘 (고해상도)
+│   ├── icon-192.png / icon-512.png    # 앱 아이콘
+│   └── docs/                          # 회의록 앱 관련 문서 모음
+│       ├── HANDOFF.md                 # Claude 세션 인계
+│       ├── SETUP.md                   # 배포 9단계 체크리스트
+│       ├── PIPELINE.md                # 현재 7단계 파이프라인 명세 (MEETING-NOTES-PIPELINE.md)
+│       ├── WORK-LOG.md                # 작업 히스토리 (PR별 상세 링크)
+│       ├── RECOVERY-PLAN.md           # 4단계 복구/개선 계획
+│       ├── REFACTOR-PLAN.md           # 모듈 리팩터 계획
+│       └── work_log_*.md              # PR별/이벤트별 상세 (17개)
 │
 ├── api/
-│   └── process-meeting.js             # 서버리스: Gemini 전사 + Notion 생성
+│   ├── process-meeting.js             # 서버리스: Gemini 전사 + Notion 생성
+│   └── version.js                     # 배포 버전 배지용
+│
+├── scripts/                           # 로컬 처리/복구 스크립트
+│   ├── process-recording-locally.js   # Gemini 직접 호출 전사+요약
+│   ├── upload-to-notion.js            # result.json → Notion 페이지
+│   ├── recover-session.js             # 세그먼트 실패 세션 복구
+│   ├── download-session-audio.js      # Vercel Blob → 로컬 webm
+│   ├── split-audio-segments.js        # ffmpeg 5분 분할
+│   ├── extract-term-candidates.js     # 유의어 후보 추출
+│   └── preview-summarize-prompt.js    # 요약 프롬프트 미리보기
+│
+├── shared/
+│   └── version-badge.js               # 모든 페이지 우하단 버전 배지
 │
 ├── package.json                       # 의존성 (@google/genai, @notionhq/client, @vercel/blob)
 ├── vercel.json                        # 함수 maxDuration 60s
 ├── .env.example                       # 환경변수 템플릿
 ├── .gitignore
-│
-├── README.md                          # ← 지금 보는 문서
-├── SETUP.md                           # 배포 9단계 체크리스트
-└── HANDOFF.md                         # Claude 세션 인계 문서
+└── README.md                          # ← 지금 보는 문서
 ```
 
 ---
@@ -82,9 +100,11 @@ AI-Tips/
 
 | 문서 | 용도 |
 |------|------|
-| **[SETUP.md](./SETUP.md)** | 처음 배포할 때 따라가는 9단계 체크리스트 |
-| **[HANDOFF.md](./HANDOFF.md)** | 새 Claude 세션에서 이 프로젝트를 이어 작업할 때 읽는 인계 문서 |
-| **[meeting-notes-deck.html](./meeting-notes-deck.html)** | 스터디 발표용 HTML 슬라이드 (11장, 브라우저에서 발표) |
+| **[meeting-notes/docs/SETUP.md](./meeting-notes/docs/SETUP.md)** | 처음 배포할 때 따라가는 9단계 체크리스트 |
+| **[meeting-notes/docs/HANDOFF.md](./meeting-notes/docs/HANDOFF.md)** | 새 Claude 세션에서 이 프로젝트를 이어 작업할 때 읽는 인계 문서 |
+| **[meeting-notes/docs/WORK-LOG.md](./meeting-notes/docs/WORK-LOG.md)** | 작업 히스토리 · 시행착오 · 교훈 (PR별 상세 링크 포함) |
+| **[meeting-notes/docs/MEETING-NOTES-PIPELINE.md](./meeting-notes/docs/MEETING-NOTES-PIPELINE.md)** | 현재 7단계 파이프라인 단계별 명세 |
+| **[meeting-notes-deck.html](./meeting-notes-deck.html)** | 스터디 발표용 HTML 슬라이드 (14장, 16:9) |
 
 ---
 

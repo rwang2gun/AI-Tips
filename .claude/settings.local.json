@@ -1,8 +1,41 @@
 {
   "permissions": {
     "allow": [
-      "Skill(codex:rescue)",
-      "Skill(codex:rescue:*)"
+      "Bash(nvm uninstall:*)",
+      "Bash(nvm install:*)",
+      "Bash(npm install:*)",
+      "Bash(npm audit:*)",
+      "Bash(node --env-file=.env scripts/download-session-audio.js 79d6ce87-b802-4384-977f-48ff191ac3b3)",
+      "Bash(node --env-file=.env scripts/process-recording-locally.js recovered-79d6ce87.webm)",
+      "Bash(node --env-file=.env scripts/process-recording-locally.js recovered-79d6ce87.webm --force-retranscribe)",
+      "Bash(git fetch:*)",
+      "Bash(git pull:*)",
+      "Bash(ffmpeg -version)",
+      "Bash(ffprobe -v error -show_entries format=duration,bit_rate,format_name,size -of default=noprint_wrappers=1 recovered-79d6ce87.webm)",
+      "Bash(where ffmpeg:*)",
+      "Bash(where ffprobe:*)",
+      "Bash(powershell.exe -Command \"Get-Command ffmpeg -ErrorAction SilentlyContinue; Get-Command ffprobe -ErrorAction SilentlyContinue\")",
+      "Bash(node -e \"const p=require\\('ffmpeg-static'\\); console.log\\('FFMPEG_PATH:', p\\);\")",
+      "Bash(\"D:\\\\Claude\\\\AI-Tips\\\\node_modules\\\\ffmpeg-static\\\\ffmpeg.exe\" -hide_banner -i recovered-79d6ce87.webm -f null -)",
+      "Bash(\"D:\\\\Claude\\\\AI-Tips\\\\node_modules\\\\ffmpeg-static\\\\ffmpeg.exe\" -hide_banner -loglevel error -y -i recovered-79d6ce87.webm -t 300 -c:a libopus -b:a 32k sample-first5min.webm)",
+      "Bash(\"D:\\\\Claude\\\\AI-Tips\\\\node_modules\\\\ffmpeg-static\\\\ffmpeg.exe\" -hide_banner -i sample-first5min.webm -f null -)",
+      "Bash(node --env-file=.env scripts/process-recording-locally.js sample-first5min.webm --title=\"[샘플] 기획-아트 협업 5분 샘플\" --type=\"내부 논의\")",
+      "Bash(\"D:\\\\Claude\\\\AI-Tips\\\\node_modules\\\\ffmpeg-static\\\\ffmpeg.exe\" -hide_banner -loglevel error -y -i recovered-79d6ce87.webm -t 1800 -c:a libopus -b:a 32k sample-first30min.webm)",
+      "Bash(\"D:\\\\Claude\\\\AI-Tips\\\\node_modules\\\\ffmpeg-static\\\\ffmpeg.exe\" -hide_banner -i sample-first30min.webm -f null -)",
+      "Bash(node --env-file=.env scripts/process-recording-locally.js sample-first30min.webm --transcribe-only)",
+      "Bash(node --check scripts/process-recording-locally.js)",
+      "Bash(ls -la sample-first30min.*)",
+      "Bash(node --env-file=.env scripts/process-recording-locally.js sample-first30min.webm --transcribe-only --segment-minutes=5)",
+      "Bash(ls sample-first30min.*)",
+      "Bash(wc -l sample-first30min.transcript.txt sample-first30min.seg-*.transcript.txt)",
+      "Bash(node scripts/reformat-transcript.js sample-first30min.transcript.txt)",
+      "Bash(git stash *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(node *)",
+      "Bash(git reset *)",
+      "Bash(git mv *)"
     ]
   }
 }
