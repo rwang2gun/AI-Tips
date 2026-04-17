@@ -36,7 +36,7 @@ import {
   uploadFileToNotion,
   buildTranscriptFilename,
 } from '../lib/notion/file-upload.js';
-import { buildMeetingPageBlocks } from '../lib/notion/page-builder.js';
+import { createMeetingNotionPage } from '../lib/notion/page-create.js';
 
 // process-recording-locally.js와 동일하게 undici 타임아웃 제거.
 // Notion children 많을 때 응답이 느려질 수 있어 안전하게 무제한.
@@ -137,21 +137,12 @@ console.log('Creating Notion page...');
 const notion = await createNotionClient();
 const databaseId = process.env.NOTION_DATABASE_ID;
 
-const properties = {
-  '이름': { title: [{ text: { content: meetingData.title } }] },
-  '회의 날짜': { date: { start: date } },
-  '회의 유형': { select: { name: meetingData.meetingType } },
-};
-if (meetingData.labels?.length) {
-  properties['레이블'] = { multi_select: meetingData.labels.map((name) => ({ name })) };
-}
-
-const children = buildMeetingPageBlocks(meetingData, transcriptFileUpload);
-
-const page = await notion.pages.create({
-  parent: { database_id: databaseId },
-  properties,
-  children,
+const page = await createMeetingNotionPage({
+  notion,
+  databaseId,
+  meetingData,
+  date,
+  transcriptUpload: transcriptFileUpload,
 });
 
 console.log('');

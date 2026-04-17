@@ -4,7 +4,7 @@ import {
   uploadFileToNotion,
   buildTranscriptFilename,
 } from '../../lib/notion/file-upload.js';
-import { buildMeetingPageBlocks } from '../../lib/notion/page-builder.js';
+import { createMeetingNotionPage } from '../../lib/notion/page-create.js';
 import { readJsonBody, jsonResponse } from '../../lib/http/body-parser.js';
 
 // Notion 페이지 생성 + 세션 폴더 정리
@@ -44,7 +44,14 @@ export default async function handleFinalizeNotion(req, res) {
   }
 
   // Notion 페이지 생성 (진단 토글 안에 transcript 첨부 + sourceQuote 매핑 포함)
-  const notionUrl = await createNotionPage(meetingData, date, transcriptUpload);
+  const notion = await createNotionClient();
+  const page = await createMeetingNotionPage({
+    notion,
+    databaseId: process.env.NOTION_DATABASE_ID,
+    meetingData,
+    date,
+    transcriptUpload,
+  });
 
   // 청크 + 전사 + 결과 파일 모두 정리 (전사는 이미 Notion에 첨부됐고, Gemini 파일은 48시간 후 자동 삭제)
   try {
@@ -56,30 +63,6 @@ export default async function handleFinalizeNotion(req, res) {
   return jsonResponse(res, 200, {
     ok: true,
     title: meetingData.title,
-    notionUrl,
+    notionUrl: page.url,
   });
-}
-
-async function createNotionPage(data, dateStr, transcriptUpload = null) {
-  const notion = await createNotionClient();
-  const databaseId = process.env.NOTION_DATABASE_ID;
-
-  const properties = {
-    '이름': { title: [{ text: { content: data.title } }] },
-    '회의 날짜': { date: { start: dateStr } },
-    '회의 유형': { select: { name: data.meetingType } },
-  };
-  if (data.labels?.length) {
-    properties['레이블'] = { multi_select: data.labels.map((name) => ({ name })) };
-  }
-
-  const children = buildMeetingPageBlocks(data, transcriptUpload);
-
-  const page = await notion.pages.create({
-    parent: { database_id: databaseId },
-    properties,
-    children,
-  });
-
-  return page.url;
 }
