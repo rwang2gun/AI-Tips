@@ -1,6 +1,6 @@
 # 회의록 복구 작업 로그
 
-> **맥락**: 2026-04-16, Android Chrome PWA에서 녹음한 70분짜리 회의가 Vercel 서버리스 처리 중 `FUNCTION_INVOCATION_TIMEOUT`으로 실패. 복구 과정에서 Gemini API + Vercel Hobby 플랜의 여러 한계를 만나며 PR #1~#10으로 단건 복구. 이후 PR #11~#15로 운영 품질/근본 구조까지 확장 (2026-04-17).
+> **맥락**: 2026-04-16, Android Chrome PWA에서 녹음한 70분짜리 회의가 Vercel 서버리스 처리 중 `FUNCTION_INVOCATION_TIMEOUT`으로 실패. 복구 과정에서 Gemini API + Vercel Hobby 플랜의 여러 한계를 만나며 PR #1~#10으로 단건 복구. 이후 PR #11~#15로 운영 품질/근본 구조까지 확장. 2026-04-17 저녁 두 번째 실전 실패(세션 78ef84bf, 45분 회의 9/14 실패) + 발표 자료 전면 개편 + 서버 드리프트 수정 등 post-PR#15 직접 커밋으로 이어짐.
 
 ---
 
@@ -34,6 +34,13 @@
 - [PR #14 — 회의록 레이아웃 정리 + 작성 가이드 Notion 연동](work_log_pr_14.md)
 - [PR #15 — 녹음 단계 5분 분할 (근본 해결) + topic 2차 압축 + 진단 자료](work_log_pr_15.md)
 
+### 후속 작업 (post-PR#15 직접 커밋 · 2026-04-17 저녁)
+
+PR 없이 main에 직접 반영된 커밋들. 실전 운영에서 드러난 이슈 대응 + 보조 자료 개편.
+
+- [발표 자료 전면 개편 (16:9 + 내러티브 14장)](work_log_deck_redesign.md) — 커밋 9bc51c2
+- [세션 78ef84bf 실전 실패 · 복구 · 서버 가이드 반영](work_log_session_78ef84bf.md) — 커밋 022900f(recover-session.js) + 038ed82(서버 fetchGuide)
+
 ---
 
 ## 🎓 핵심 교훈
@@ -64,9 +71,11 @@
 ### 프로세스 교훈
 
 1. **가정 검증 없이 구현하지 말 것** — PR #3 (videoMetadata)은 공식 문서에 "video 전용"이라 적혀 있었는데 오디오에도 작동한다고 가정하고 구현했다가 전량 폐기
-2. **Vercel Function 로그가 최고의 진단 도구** — "external API 하나가 60초 점유" 정보로 Gemini 쪽 시간 소비 확정
+2. **Vercel Function 로그가 최고의 진단 도구** — "external API 하나가 60초 점유" 정보로 Gemini 쪽 시간 소비 확정. **단, Hobby는 1시간만 보존**이라 사후 분석 불가 (세션 78ef84bf 케이스) → 앱 레벨에서 Blob/외부 저장소에 에러 로깅 필요
 3. **중간 산출물 파일 저장이 회복 핵심** — 전사문이 `recovered-*.transcript.txt`에 남아 있어서 503 재시도 시 토큰 낭비 없이 summarize만 재실행 가능
 4. **모델 선택은 작업 특성에 맞춰** — 단순 전사는 Flash + thinking OFF, 구조화 요약은 Pro
+5. **서버/로컬 구현 드리프트 주의** — PR #14 가이드 연동이 로컬에만 들어가고 서버에 빠진 게 실전 회의록 품질 저하로 나타남 (agenda 0, topic 초과). "코드 중복"이 아니라 "사용자 체감 품질이 경로에 따라 달라지는 버그". 기능 추가 시 양쪽 동시 반영 또는 공통 모듈 추출 기준 필요
+6. **Gemini 호출 명령 제안 전 known-bug 체크** — 세션 78ef84bf 복구 중 45분 단일 오디오 전사를 내(Claude)가 먼저 제안 → WORK-LOG PR #12 경고 시나리오 유도. 과금 API 명령 직전엔 WORK-LOG "알려진 한계"와 입력 조건 대조가 루틴
 
 ---
 
@@ -88,31 +97,36 @@
 
 ---
 
-## 🚧 현재 상태 (2026-04-17 갱신)
+## 🚧 현재 상태 (2026-04-17 저녁 갱신)
 
 ### ✅ 완료
-- **단건 복구** (2026-04-16): 원본 오디오 로컬 백업 / 전사문 / 요약 JSON 생성
+- **단건 복구 2건**: 79d6ce87 (63분 전체) + 78ef84bf (45분 부분, 9/14까지)
 - **전사 품질 문제 원인 확정** (PR #12): generation loop — 5분 분할로 해소
-- **Vercel 60초 근본 해결** (PR #15): MediaRecorder 5분 세그먼트 녹음 + 서버 세그먼트 파이프라인. RECOVERY-PLAN.md Step 4 완료
+- **Vercel 60초 근본 해결 구조** (PR #15): MediaRecorder 5분 세그먼트 녹음 + 서버 세그먼트 파이프라인
 - **운영 품질 개선**:
   - 유의어 DB 양단 연동 (PR #12)
-  - 회의록 작성 가이드 Notion 외재화 (PR #14)
+  - 회의록 작성 가이드 Notion 외재화 (PR #14) — **서버 반영은 [038ed82]에서 뒤늦게 추가**
   - Notion 페이지 레이아웃 정리 (PR #14)
   - 앱 버전 배지로 배포 반영 확인 (PR #13)
-- **진단 자료 구축** (PR #15):
-  - 전사 원문 `.txt`를 회의록과 함께 Notion에 첨부
-  - 항목별 `sourceQuote`로 환각 탐지 가능
+- **진단 자료 구축** (PR #15): 전사 원문 첨부 + `sourceQuote` 환각 탐지
+- **복구 유틸 확보** ([022900f]): `scripts/recover-session.js`로 세그먼트 구조 실패 세션 복구 가능
+- **발표 자료 리뉴얼** ([9bc51c2]): 16:9 + 내러티브 14장, Notion embed 대응
 - **문서 분리**: RECOVERY-PLAN / WORK-LOG / MEETING-NOTES-PIPELINE 역할 분리
 
+### 🔴 실전에서 드러난 구조적 문제 (우선순위 높음)
+- **upload-chunk 재시도 없음**: 단일 실패로 세션 전체 abort. 78ef84bf가 정확히 이 패턴
+- **retry 버튼이 실제 재전송 아님**: `reset()`만 호출해 녹음 초기 화면으로. 인메모리 segments 활용 못함
+- **세션 재개 불가**: 실패 지점부터 이어 처리 불가능 → 전체 재시작 또는 수동 `recover-session.js` 실행
+- **Vercel Hobby 로그 1시간 보존**: 사후 원인 분석 못함 → 앱 레벨 에러 로깅 (세션 폴더에 `errors.log.json`) 필요
+
 ### 🟡 미검증 / 관찰 필요
-- **PR #15 실전 검증 부족**:
-  - topic 2-pass 압축이 실제 회의에서 정상 동작하는지 재검증 미완 (PR #14 당일 Pro 503으로 실패)
-  - PWA 5분 분할 녹음이 실전 70분 회의에서 끝까지 완주하는지 실사례 필요
-- **sourceQuote 환각 탐지율**: "근거 없음" 표시가 실제 환각과 얼마나 일치하는지 사례 축적 필요
+- **topic 2-pass 실 효과**: 78ef84bf에서 가이드 있어도 55자 유지 (2-pass 시도했으나 더 짧지 않아 1차 유지). schema description + 가이드만으로 50자 강제하기 어려운 내용이 있음
+- **sourceQuote 환각 탐지율**: 78ef84bf에서 수집됐으나 적중률 판정 미완
+- **PWA 70분+ 완주**: 45분에서 실패 → 70분은 더 위험. 재시도 구조 없이는 확률 낮음
 
 ### ⚠️ 기술 부채
-- **서버/로컬 헬퍼 중복**: `buildBlocks`, `buildEvidenceBlocks`, `uploadTranscriptToNotion` 등이 `api/process-meeting.js`와 `scripts/` 양쪽에 중복. 한쪽만 변경하면 동작 차이 발생 위험. 현재는 주석으로 동기화 필요 명시만 됨.
-- **legacy 액션 보존**: `prepare`/`transcribe` (단일 파일용)이 `recover.html` 기존 실패 세션 복구용으로 남아 있음. 구 세션 모두 정리되면 제거 가능.
+- **서버/로컬 헬퍼 중복**: `buildBlocks`, `buildEvidenceBlocks`, `uploadTranscriptToNotion`, **`fetchGuide`/`renderPageBlocks`** 등 `api/process-meeting.js`와 `scripts/` 양쪽에 중복. 한쪽만 변경하면 사용자 체감 품질 차이 발생 위험 (PR #14 → [038ed82] 지연 반영이 선례)
+- **legacy 액션 보존**: `prepare`/`transcribe` (단일 파일용)이 `recover.html` 기존 실패 세션 복구용으로 남아 있음
 
 ---
 
@@ -130,7 +144,8 @@
 ### 스크립트
 | 파일 | 역할 |
 |------|------|
-| `scripts/download-session-audio.js` | Vercel Blob → 로컬 webm |
+| `scripts/download-session-audio.js` | Vercel Blob → 로컬 webm (legacy 단일 폴더 세션용) |
+| `scripts/recover-session.js` | seg-NN 구조 실패 세션 복구 + ffmpeg 병합 ([022900f]) |
 | `scripts/split-audio-segments.js` | ffmpeg 5분 분할 (PR #12) |
 | `scripts/process-recording-locally.js` | 로컬 전사 + 요약 (Gemini 직접) |
 | `scripts/upload-to-notion.js` | JSON → Notion 페이지 + 전사 첨부 |
@@ -158,13 +173,18 @@
    - `WORK-LOG.md` (이 문서, 시행착오/교훈)
    - `RECOVERY-PLAN.md` (Step 1~4 계획 대비 진척)
 2. **현재 작업 컨텍스트**:
-   - 단건 복구 완료 + 근본 구조(5분 분할 녹음) 반영 + 진단 자료(전사 첨부 + sourceQuote) 구축까지 도달
-   - 실전 회의에서의 **end-to-end 검증**이 다음 관문
-3. **우선 확인 과제**:
-   - 실전 70분 이상 회의로 PR #15 파이프라인 완주 검증
-   - topic 2-pass 압축 실제 결과 품질 (아젠다 나열식에서 한 줄 주제로 실제 바뀌는지)
-   - sourceQuote 누락 항목이 실제 환각과 얼마나 일치하는지 몇 건 샘플 분석
-4. **여유 있을 때 정리**:
-   - 서버/로컬 헬퍼 중복 (`buildBlocks` 등) 공통 모듈로 추출
+   - 단건 복구 2건 완료 (79d6ce87 전체 / 78ef84bf 부분 ~40분)
+   - 실전에서 **5분 분할 녹음 자체는 괜찮으나 업로드 실패 시 복구 경로 취약** 확인
+   - 서버 가이드 반영 완료 — 다음 PWA 회의부터 agenda 정상 추출 기대
+3. **최우선 해결 과제 (실전 재발 방지)**:
+   - **retry 버튼 실제 재전송 구현** (현재 reset만 호출)
+   - **upload-chunk 재시도 + 지수 백오프** (단일 blip으로 전체 abort 방지)
+   - **세션 재개 구조** (서버가 이미 완료된 세그먼트 인식 → 실패한 곳부터만)
+   - **앱 레벨 에러 로깅** (Vercel Hobby 1시간 보존 우회 — 세션 폴더에 `errors.log.json`)
+4. **품질 검증 과제**:
+   - topic 2-pass가 실전에서 50자 내로 정리되는지 케이스 누적
+   - sourceQuote 빈 문자열 항목의 환각 적중률 사례 분석
+5. **여유 있을 때 정리**:
+   - 서버/로컬 헬퍼 중복 (`buildBlocks`, `fetchGuide` 등) 공통 모듈로 추출
    - legacy `prepare`/`transcribe` 액션 제거 (구 실패 세션 모두 복구된 이후)
 5. **브랜치 상태**: `main`이 PR #15까지 반영 (커밋 `34ec94a`).
