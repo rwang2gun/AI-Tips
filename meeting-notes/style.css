@@ -174,6 +174,35 @@ body{
   letter-spacing:0.02em;
 }
 
+/* 일시정지/종료 컨트롤 — 녹음 중/일시정지 상태에서 노출 */
+.rec-controls{
+  display:flex;
+  gap:12px;
+  width:100%;
+  justify-content:center;
+}
+.ctrl-btn{
+  flex:1;
+  max-width:160px;
+  padding:14px 18px;
+  background:var(--surface-2);
+  border:1px solid var(--border);
+  border-radius:12px;
+  color:var(--text);
+  font-family:inherit;
+  font-size:14px;
+  font-weight:500;
+  cursor:pointer;
+  transition:transform 0.1s ease, background 0.15s ease;
+}
+.ctrl-btn:active{transform:scale(0.97)}
+.ctrl-btn.stop{
+  background:transparent;
+  border-color:var(--rec);
+  color:var(--rec);
+}
+.ctrl-btn.stop:active{background:rgba(239,74,91,0.1)}
+
 /* META FORM */
 .meta-form{
   width:100%;
