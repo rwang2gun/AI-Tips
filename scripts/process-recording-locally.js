@@ -68,6 +68,11 @@ import {
   enforceSentenceBreaks,
   applySynonymReplacements,
 } from '../lib/transcript/post-process.js';
+import { withRetry } from '../lib/http/retry.js';
+
+// 로컬 CLI는 타임아웃 제약이 없어 api 기본(3회/8s cap) 대신 6회/32s cap.
+// 재시도 시퀀스 2→4→8→16→32s 는 기존 로컬 withRetry helper 의 시퀀스와 동일.
+const LOCAL_RETRY_OPTS = { maxAttempts: 6, baseDelayMs: 2000, maxDelayMs: 32000 };
 
 // 긴 오디오 전사 시 Gemini 응답이 5분을 넘을 수 있어 undici 기본
 // headersTimeout(5분)에 걸림. 로컬 CLI라 무제한으로 설정.
@@ -133,28 +138,6 @@ console.log(`MIME type:   ${mimeType}`);
 
 const genAI = createGeminiClient();
 
-// 503 (high demand), 429 (rate limit), 500 (internal) 대상 지수 백오프 재시도.
-// 2s → 4s → 8s → 16s → 32s 대기, 최대 5회 재시도.
-async function withRetry(label, fn, maxRetries = 5) {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (err) {
-      const status = err?.status ?? err?.response?.status ?? null;
-      const msg = err?.message || String(err);
-      const isRetryable = status === 503 || status === 429 || status === 500 ||
-        /503|UNAVAILABLE|high demand|RESOURCE_EXHAUSTED|overloaded/i.test(msg);
-      if (attempt === maxRetries || !isRetryable) {
-        throw err;
-      }
-      const waitSec = Math.min(2 ** (attempt + 1), 32);
-      console.error(`      [${label}] attempt ${attempt + 1}/${maxRetries + 1} failed (${status || 'network'}: ${msg.slice(0, 80)})`);
-      console.error(`      Retrying in ${waitSec}s...`);
-      await new Promise((r) => setTimeout(r, waitSec * 1000));
-    }
-  }
-}
-
 // ------- 유의어 사전 로드 (전사/요약 양쪽에서 사용) -------
 // 한 번만 fetch해서 두 단계 모두에 주입. 실패해도 전사/요약은 계속 진행.
 const synonyms = await fetchSynonyms();
@@ -202,7 +185,7 @@ if (existsSync(transcriptPath) && !flags.has('--force-retranscribe')) {
   const transcribePrompt = buildLocalTranscribePrompt({ synonymHint });
 
   const transcribeStart = Date.now();
-  const transcribeResult = await withRetry('transcribe', () => genAI.models.generateContent({
+  const transcribeResult = await withRetry(() => genAI.models.generateContent({
     model: 'gemini-2.5-flash',
     contents: [
       createUserContent([
@@ -218,7 +201,7 @@ if (existsSync(transcriptPath) && !flags.has('--force-retranscribe')) {
       // 전사는 단순 작업이라 thinking 끄고 전체 토큰을 실제 출력에 할당.
       thinkingConfig: { thinkingBudget: 0 },
     },
-  }));
+  }), { ...LOCAL_RETRY_OPTS, label: 'transcribe' });
   const transcribeElapsed = ((Date.now() - transcribeStart) / 1000).toFixed(1);
 
   transcript = transcribeResult.text || '';
@@ -309,7 +292,7 @@ if (existsSync(resultPath) && !flags.has('--force-resummarize')) {
   const summarizeModel = kwargs['summarize-model'] || 'gemini-2.5-pro';
   console.log(`      Model: ${summarizeModel}`);
   const summarizeStart = Date.now();
-  const summarizeResult = await withRetry('summarize', () => genAI.models.generateContent({
+  const summarizeResult = await withRetry(() => genAI.models.generateContent({
     model: summarizeModel,
     contents: [createUserContent([summarizePrompt])],
     config: {
@@ -317,7 +300,7 @@ if (existsSync(resultPath) && !flags.has('--force-resummarize')) {
       responseSchema: meetingSchema(),
       maxOutputTokens: 65536,
     },
-  }));
+  }), { ...LOCAL_RETRY_OPTS, label: 'summarize' });
   const summarizeElapsed = ((Date.now() - summarizeStart) / 1000).toFixed(1);
 
   const meetingData = JSON.parse(summarizeResult.text);
@@ -328,7 +311,7 @@ if (existsSync(resultPath) && !flags.has('--force-resummarize')) {
     const before = meetingData.topic;
     console.log(`      Topic 50자 초과 (${before.length}자) — Pro로 재압축 시도...`);
     try {
-      const refined = await withRetry('refine-topic', () => refineTopic(meetingData));
+      const refined = await withRetry(() => refineTopic(meetingData), { ...LOCAL_RETRY_OPTS, label: 'refine-topic' });
       if (refined && refined.length > 0 && refined.length < before.length) {
         meetingData.topic = refined;
         console.log(`      Topic 재압축: ${before.length}자 → ${refined.length}자`);
