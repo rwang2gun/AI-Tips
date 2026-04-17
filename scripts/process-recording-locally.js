@@ -48,7 +48,7 @@
 //   - 산출물 검수 가능: 자동 Notion 저장 X (별도 upload-to-notion.js)
 // ============================================================
 
-import { GoogleGenAI, createUserContent, createPartFromUri } from '@google/genai';
+import { createUserContent, createPartFromUri } from '@google/genai';
 import { Agent, setGlobalDispatcher } from 'undici';
 import fs from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
@@ -63,6 +63,11 @@ import {
   buildSummarizeSynonymHint,
 } from '../lib/synonyms.js';
 import { fetchGuide } from '../lib/guide.js';
+import { createGeminiClient } from '../lib/clients/gemini.js';
+import {
+  enforceSentenceBreaks,
+  applySynonymReplacements,
+} from '../lib/transcript/post-process.js';
 
 // 긴 오디오 전사 시 Gemini 응답이 5분을 넘을 수 있어 undici 기본
 // headersTimeout(5분)에 걸림. 로컬 CLI라 무제한으로 설정.
@@ -123,9 +128,10 @@ const ext = path.extname(audioPath).toLowerCase();
 const mimeType = kwargs.mime || mimeMap[ext] || 'audio/webm';
 console.log(`MIME type:   ${mimeType}`);
 
-// ------- Gemini 클라이언트 -------
+// ------- Gemini 클라이언트 (싱글톤) -------
+// 로컬 CLI는 프로세스 lifetime 동안 한 인스턴스 재사용 (서버리스 per-request 와의 의도적 차이).
 
-const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const genAI = createGeminiClient();
 
 // 503 (high demand), 429 (rate limit), 500 (internal) 대상 지수 백오프 재시도.
 // 2s → 4s → 8s → 16s → 32s 대기, 최대 5회 재시도.
@@ -381,43 +387,5 @@ async function refineTopic(meetingData) {
   text = text.replace(/^["'`「『\[(](.*)["'`」』\])]$/s, '$1').trim();
   text = text.replace(/^[Tt]opic\s*[:：]\s*/, '').trim();
   return text;
-}
-
-// 유의어 사전의 "무조건 치환" 전략 항목으로 전사문을 교정.
-// 한글 단어 경계 근사: 앞뒤가 한글이면 매칭 제외 (부분매칭 방지).
-// 반환: { text: 교정된 전문, applied: [{ from, to, count }, ...] }
-function applySynonymReplacements(text, synonyms) {
-  const strictOnes = synonyms.filter((s) => s.strategy === '무조건 치환');
-  const applied = [];
-  let result = text;
-  for (const syn of strictOnes) {
-    for (const variant of syn.misrecs) {
-      if (!variant || variant === syn.correct) continue;
-      // 한글 양옆 경계 + escape된 변형 단어 매칭
-      const escaped = variant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const re = new RegExp(`(?<![가-힣A-Za-z])${escaped}(?![가-힣A-Za-z])`, 'g');
-      const matches = result.match(re);
-      if (matches?.length) {
-        result = result.replace(re, syn.correct);
-        applied.push({ from: variant, to: syn.correct, count: matches.length });
-      }
-    }
-  }
-  return { text: result, applied };
-}
-
-// Gemini가 줄바꿈 규칙을 무시하고 한 덩어리로 반환하는 케이스 방어.
-// 문장 끝 부호(. ! ? …) + 선택적 닫는 따옴표/괄호 뒤에 공백이 오고,
-// 그 다음 문자가 한글/영문일 때만 줄바꿈 삽입.
-// 숫자 목록("1. ", "2. ")은 뒤에 숫자가 오지 않으니 자연스럽게 제외됨.
-function enforceSentenceBreaks(text) {
-  return text
-    .split('\n')
-    .map((line) => {
-      // 한 줄이 짧으면 그대로 유지 (이미 제대로 줄바꿈된 것)
-      if (line.length < 80) return line;
-      return line.replace(/([.!?…]["'」』)\]]?)[ \t]+(?=[가-힣A-Za-z])/g, '$1\n');
-    })
-    .join('\n');
 }
 

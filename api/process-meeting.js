@@ -67,9 +67,7 @@
 //   BLOB_READ_WRITE_TOKEN   — Vercel Blob 활성화 시 자동 등록
 // ============================================================
 
-import { GoogleGenAI, createUserContent, createPartFromUri } from '@google/genai';
-import { Client as NotionClient } from '@notionhq/client';
-import { put, list, del } from '@vercel/blob';
+import { createUserContent, createPartFromUri } from '@google/genai';
 import { meetingSchema } from '../lib/schemas/meeting.js';
 import {
   buildLegacyTranscribePrompt,
@@ -78,33 +76,32 @@ import {
 import { buildSummarizePrompt, buildRefineTopicPrompt } from '../lib/prompts/summarize.js';
 import { fetchGlossary } from '../lib/glossary.js';
 import { fetchGuide } from '../lib/guide.js';
+import { createGeminiClient } from '../lib/clients/gemini.js';
+import { createNotionClient } from '../lib/clients/notion.js';
+import {
+  putPublic,
+  list,
+  fetchBlobText,
+  fetchBlobJson,
+  findBlob,
+  deleteByPrefix,
+} from '../lib/clients/blob.js';
+import {
+  concatBlobChunks,
+  mergeSegmentTranscripts,
+  selectSegmentTranscriptBlobs,
+} from '../lib/audio/chunking.js';
+import {
+  uploadFileToNotion,
+  buildTranscriptFilename,
+} from '../lib/notion/file-upload.js';
+import { readRawBody, readJsonBody, jsonResponse } from '../lib/http/body-parser.js';
 
 export const config = {
   api: {
     bodyParser: false,
   },
 };
-
-// ------- 유틸 -------
-
-async function readRawBody(req) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    req.on('data', (c) => chunks.push(c));
-    req.on('end', () => resolve(Buffer.concat(chunks)));
-    req.on('error', reject);
-  });
-}
-
-async function readJsonBody(req) {
-  const buf = await readRawBody(req);
-  return JSON.parse(buf.toString('utf-8'));
-}
-
-function jsonResponse(res, status, body) {
-  res.status(status).setHeader('Content-Type', 'application/json');
-  res.send(JSON.stringify(body));
-}
 
 // Gemini 503/429/일시적 거절을 지수 백오프로 재시도.
 // Vercel 60초 한도 안에 끝나도록 maxAttempts/maxDelay 보수적으로 설정.
@@ -206,11 +203,9 @@ async function handleUploadChunk(req, res) {
   }
 
   const buffer = await readRawBody(req);
-  await put(key, buffer, {
-    access: 'public', // Vercel Blob 정책상 필요. 키가 추측 불가능한 UUID라 사실상 비공개
-    addRandomSuffix: false,
-    allowOverwrite: true,
-  });
+  // putPublic 기본 옵션: access:'public' / addRandomSuffix:false / allowOverwrite:true.
+  // public은 Vercel Blob 정책상 필요 — 키가 추측 불가능한 UUID라 사실상 비공개.
+  await putPublic(key, buffer);
 
   return jsonResponse(res, 200, { ok: true, chunkIndex: Number(chunkIndex) });
 }
@@ -225,25 +220,15 @@ async function handlePrepare(req, res) {
     return jsonResponse(res, 400, { error: 'Invalid session id' });
   }
 
-  // Vercel Blob에서 모든 청크 가져와 결합
   const prefix = `meetings/${sessionId}/`;
   const { blobs } = await list({ prefix });
   if (!blobs.length) {
     return jsonResponse(res, 400, { error: 'No audio chunks found for session' });
   }
-  blobs.sort((a, b) => a.pathname.localeCompare(b.pathname));
-
-  const chunkBuffers = await Promise.all(
-    blobs.map(async (b) => {
-      const r = await fetch(b.url);
-      const buf = await r.arrayBuffer();
-      return Buffer.from(buf);
-    })
-  );
-  const audioBuffer = Buffer.concat(chunkBuffers);
+  const audioBuffer = await concatBlobChunks(blobs);
 
   // Gemini Files API에 업로드 — PROCESSING 상태 대기는 클라이언트에서 check-file로 폴링
-  const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const genAI = createGeminiClient();
   const audioBlob = new Blob([audioBuffer], { type: mimeType || 'audio/webm' });
 
   const uploaded = await genAI.files.upload({
@@ -270,7 +255,7 @@ async function handleCheckFile(req, res) {
     return jsonResponse(res, 400, { error: 'Invalid fileName' });
   }
 
-  const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const genAI = createGeminiClient();
   const fileInfo = await genAI.files.get({ name: fileName });
 
   return jsonResponse(res, 200, {
@@ -294,7 +279,7 @@ async function handleTranscribe(req, res) {
     return jsonResponse(res, 400, { error: 'Missing fileUri/fileMimeType' });
   }
 
-  const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const genAI = createGeminiClient();
 
   const promptText = buildLegacyTranscribePrompt();
 
@@ -314,11 +299,8 @@ async function handleTranscribe(req, res) {
   }
 
   // 전사문을 Blob에 저장 (다음 단계 summarize에서 읽음)
-  await put(`meetings/${sessionId}/transcript.txt`, transcript, {
-    access: 'public',
+  await putPublic(`meetings/${sessionId}/transcript.txt`, transcript, {
     contentType: 'text/plain; charset=utf-8',
-    addRandomSuffix: false,
-    allowOverwrite: true,
   });
 
   return jsonResponse(res, 200, {
@@ -345,17 +327,9 @@ async function handlePrepareSegment(req, res) {
   if (!blobs.length) {
     return jsonResponse(res, 400, { error: `No chunks found for segment ${segmentIndex}` });
   }
-  blobs.sort((a, b) => a.pathname.localeCompare(b.pathname));
+  const audioBuffer = await concatBlobChunks(blobs);
 
-  const chunkBuffers = await Promise.all(
-    blobs.map(async (b) => {
-      const r = await fetch(b.url);
-      return Buffer.from(await r.arrayBuffer());
-    })
-  );
-  const audioBuffer = Buffer.concat(chunkBuffers);
-
-  const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const genAI = createGeminiClient();
   const audioBlob = new Blob([audioBuffer], { type: mimeType || 'audio/webm' });
   const uploaded = await withRetry(() =>
     genAI.files.upload({
@@ -392,7 +366,7 @@ async function handleTranscribeSegment(req, res) {
 
   const promptText = buildSegmentTranscribePrompt({ segmentIndex, totalSegments });
 
-  const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const genAI = createGeminiClient();
   const result = await withRetry(() =>
     genAI.models.generateContent({
       model: 'gemini-2.5-flash',
@@ -416,12 +390,7 @@ async function handleTranscribeSegment(req, res) {
   }
 
   const key = `meetings/${sessionId}/transcript-${String(segmentIndex).padStart(2, '0')}.txt`;
-  await put(key, transcript, {
-    access: 'public',
-    contentType: 'text/plain; charset=utf-8',
-    addRandomSuffix: false,
-    allowOverwrite: true,
-  });
+  await putPublic(key, transcript, { contentType: 'text/plain; charset=utf-8' });
 
   return jsonResponse(res, 200, {
     ok: true,
@@ -442,9 +411,7 @@ async function handleMergeTranscripts(req, res) {
 
   const prefix = `meetings/${sessionId}/transcript-`;
   const { blobs } = await list({ prefix });
-  const segmentBlobs = blobs
-    .filter((b) => /\/transcript-\d{2}\.txt$/.test(b.pathname))
-    .sort((a, b) => a.pathname.localeCompare(b.pathname));
+  const segmentBlobs = selectSegmentTranscriptBlobs(blobs);
 
   if (!segmentBlobs.length) {
     return jsonResponse(res, 400, { error: 'No segment transcripts found' });
@@ -455,23 +422,10 @@ async function handleMergeTranscripts(req, res) {
     });
   }
 
-  const SEGMENT_MINUTES = 5;
-  const parts = await Promise.all(
-    segmentBlobs.map(async (b, i) => {
-      const r = await fetch(b.url);
-      const text = (await r.text()).trim();
-      const startMin = i * SEGMENT_MINUTES;
-      const endMin = startMin + SEGMENT_MINUTES;
-      return `--- [${startMin}:00 ~ ${endMin}:00] ---\n${text}`;
-    })
-  );
-  const merged = parts.join('\n\n');
+  const merged = await mergeSegmentTranscripts(segmentBlobs);
 
-  await put(`meetings/${sessionId}/transcript.txt`, merged, {
-    access: 'public',
+  await putPublic(`meetings/${sessionId}/transcript.txt`, merged, {
     contentType: 'text/plain; charset=utf-8',
-    addRandomSuffix: false,
-    allowOverwrite: true,
   });
 
   return jsonResponse(res, 200, {
@@ -492,16 +446,10 @@ async function handleSummarize(req, res) {
   }
 
   // Blob에서 전사문 가져오기
-  const transcriptKey = `meetings/${sessionId}/transcript.txt`;
-  const { blobs } = await list({ prefix: transcriptKey });
-  const transcriptBlob = blobs.find((b) => b.pathname === transcriptKey);
-  if (!transcriptBlob) {
+  const transcript = await fetchBlobText(`meetings/${sessionId}/transcript.txt`);
+  if (transcript == null) {
     return jsonResponse(res, 400, { error: 'No transcript found — run transcribe first' });
   }
-
-  const transcriptRes = await fetch(transcriptBlob.url);
-  const transcript = await transcriptRes.text();
-
   if (!transcript.trim()) {
     return jsonResponse(res, 400, { error: 'Empty transcript' });
   }
@@ -513,7 +461,7 @@ async function handleSummarize(req, res) {
   });
   const guideText = await fetchGuide();
 
-  const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const genAI = createGeminiClient();
   const today = new Date().toISOString().slice(0, 10);
   const meetingMeta = {
     requestedTitle: title,
@@ -558,11 +506,8 @@ async function handleSummarize(req, res) {
 
   // 결과 JSON을 Blob에 저장 (다음 단계 finalize-notion에서 읽음)
   const payload = { meetingData, date: today };
-  await put(`meetings/${sessionId}/result.json`, JSON.stringify(payload), {
-    access: 'public',
+  await putPublic(`meetings/${sessionId}/result.json`, JSON.stringify(payload), {
     contentType: 'application/json',
-    addRandomSuffix: false,
-    allowOverwrite: true,
   });
 
   return jsonResponse(res, 200, {
@@ -582,28 +527,26 @@ async function handleFinalizeNotion(req, res) {
   }
 
   const prefix = `meetings/${sessionId}/`;
-  const resultKey = `meetings/${sessionId}/result.json`;
-  const { blobs } = await list({ prefix: resultKey });
-  const resultBlob = blobs.find((b) => b.pathname === resultKey);
-  if (!resultBlob) {
+  const resultJson = await fetchBlobJson(`meetings/${sessionId}/result.json`);
+  if (!resultJson) {
     return jsonResponse(res, 400, { error: 'No summary result found — run summarize first' });
   }
-
-  const r = await fetch(resultBlob.url);
-  const { meetingData, date } = await r.json();
+  const { meetingData, date } = resultJson;
 
   // 전사 원문을 Notion에 업로드 (실패해도 페이지 생성은 진행)
   // Blob을 청소하기 직전에 끌어올려 진단 자료로 영구 보존.
   let transcriptUpload = null;
   try {
-    const transcriptKey = `meetings/${sessionId}/transcript.txt`;
-    const { blobs: txBlobs } = await list({ prefix: transcriptKey });
-    const txBlob = txBlobs.find((b) => b.pathname === transcriptKey);
-    if (txBlob) {
-      const txRes = await fetch(txBlob.url);
-      const transcriptText = await txRes.text();
+    const transcriptText = await fetchBlobText(`meetings/${sessionId}/transcript.txt`);
+    if (transcriptText != null) {
       const filename = buildTranscriptFilename(meetingData.title, date);
-      const id = await uploadTranscriptToNotion(transcriptText, filename);
+      // 기존 api 경로는 Blob 본문에 charset=utf-8 을 명시해 왔음 — blobContentType으로 보존.
+      const id = await uploadFileToNotion({
+        body: transcriptText,
+        filename,
+        contentType: 'text/plain',
+        blobContentType: 'text/plain;charset=utf-8',
+      });
       transcriptUpload = { id, charCount: transcriptText.length };
     }
   } catch (e) {
@@ -614,7 +557,11 @@ async function handleFinalizeNotion(req, res) {
   const notionUrl = await createNotionPage(meetingData, date, transcriptUpload);
 
   // 청크 + 전사 + 결과 파일 모두 정리 (전사는 이미 Notion에 첨부됐고, Gemini 파일은 48시간 후 자동 삭제)
-  await cleanupChunks(prefix);
+  try {
+    await deleteByPrefix(prefix);
+  } catch (e) {
+    console.warn('[cleanup] failed:', e?.message);
+  }
 
   return jsonResponse(res, 200, {
     ok: true,
@@ -646,7 +593,7 @@ async function refineTopic(genAI, meetingData) {
 // ------- Notion 페이지 생성 -------
 
 async function createNotionPage(data, dateStr, transcriptUpload = null) {
-  const notion = new NotionClient({ auth: process.env.NOTION_TOKEN });
+  const notion = await createNotionClient();
   const databaseId = process.env.NOTION_DATABASE_ID;
 
   const properties = {
@@ -903,69 +850,3 @@ function buildEvidenceBlocks(data, transcriptUpload) {
   return blocks;
 }
 
-// 전사 원문 파일명 (upload-to-notion.js와 동일 로직)
-function buildTranscriptFilename(title, date) {
-  const safe = (title || 'untitled')
-    .replace(/[\\/:*?"<>|]/g, '')
-    .replace(/\s+/g, '_')
-    .slice(0, 80);
-  return `전사원문_${date}_${safe}.txt`;
-}
-
-// Notion File Upload API (single_part). transcriptText를 업로드 후 file_upload id 반환.
-// 실패 시 throw — handleFinalizeNotion이 catch해서 첨부 없이 진행함.
-async function uploadTranscriptToNotion(transcriptText, filename) {
-  const NOTION_VERSION = '2022-06-28';
-  const token = process.env.NOTION_TOKEN;
-
-  const createResp = await fetch('https://api.notion.com/v1/file_uploads', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Notion-Version': NOTION_VERSION,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      mode: 'single_part',
-      filename,
-      content_type: 'text/plain',
-    }),
-  });
-  if (!createResp.ok) {
-    const errText = await createResp.text();
-    throw new Error(`file_upload create failed (HTTP ${createResp.status}): ${errText.slice(0, 300)}`);
-  }
-  const createData = await createResp.json();
-
-  const form = new FormData();
-  form.append('file', new Blob([transcriptText], { type: 'text/plain;charset=utf-8' }), filename);
-
-  const sendUrl = createData.upload_url || `https://api.notion.com/v1/file_uploads/${createData.id}/send`;
-  const sendResp = await fetch(sendUrl, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Notion-Version': NOTION_VERSION,
-    },
-    body: form,
-  });
-  if (!sendResp.ok) {
-    const errText = await sendResp.text();
-    throw new Error(`file_upload send failed (HTTP ${sendResp.status}): ${errText.slice(0, 300)}`);
-  }
-
-  return createData.id;
-}
-
-// ------- 청크 정리 -------
-
-async function cleanupChunks(prefix) {
-  try {
-    const { blobs } = await list({ prefix });
-    if (blobs.length) {
-      await del(blobs.map((b) => b.url));
-    }
-  } catch (e) {
-    console.warn('[cleanup] failed:', e?.message);
-  }
-}

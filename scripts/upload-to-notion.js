@@ -28,14 +28,14 @@
 //   discussion, decisions, todos)를 유지해야 함.
 // ============================================================
 
-import { Client as NotionClient } from '@notionhq/client';
 import { Agent, setGlobalDispatcher } from 'undici';
 import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import path from 'node:path';
-
-// Notion File Upload API 사용 시 헤더 버전
-const NOTION_VERSION = '2022-06-28';
+import { createNotionClient } from '../lib/clients/notion.js';
+import {
+  uploadFileToNotion,
+  buildTranscriptFilename,
+} from '../lib/notion/file-upload.js';
 
 // process-recording-locally.js와 동일하게 undici 타임아웃 제거.
 // Notion children 많을 때 응답이 느려질 수 있어 안전하게 무제한.
@@ -117,7 +117,13 @@ if (transcriptPath) {
   const safeFilename = buildTranscriptFilename(meetingData.title, date);
   const fileBuffer = await fs.readFile(transcriptPath);
   const charCount = (await fs.readFile(transcriptPath, 'utf-8')).length;
-  const fileUploadId = await uploadFileToNotion(fileBuffer, safeFilename);
+  // 기존 로컬 경로는 Blob 본문에 charset 명시 없이 'text/plain' 만 사용 — 동작 보존.
+  const fileUploadId = await uploadFileToNotion({
+    body: fileBuffer,
+    filename: safeFilename,
+    contentType: 'text/plain',
+    blobContentType: 'text/plain',
+  });
   transcriptFileUpload = { id: fileUploadId, filename: safeFilename, charCount };
   console.log(`      Uploaded as "${safeFilename}" (id: ${fileUploadId}, ${charCount.toLocaleString()}자)`);
   console.log('');
@@ -127,7 +133,7 @@ if (transcriptPath) {
 
 console.log('Creating Notion page...');
 
-const notion = new NotionClient({ auth: process.env.NOTION_TOKEN });
+const notion = await createNotionClient();
 const databaseId = process.env.NOTION_DATABASE_ID;
 
 const properties = {
@@ -149,65 +155,6 @@ const page = await notion.pages.create({
 
 console.log('');
 console.log(`Created: ${page.url}`);
-
-// ------- 전사 원문 파일명 생성 -------
-// 형식: 전사원문_{YYYY-MM-DD}_{safeTitle}.txt
-// 제목에서 OS 금지 문자 제거 + 공백을 _ 로 치환, 한글은 그대로 허용
-function buildTranscriptFilename(title, date) {
-  const safe = (title || 'untitled')
-    .replace(/[\\/:*?"<>|]/g, '') // Windows/Mac/Linux 공통 금지 문자
-    .replace(/\s+/g, '_')
-    .slice(0, 80); // 너무 긴 제목 방어
-  return `전사원문_${date}_${safe}.txt`;
-}
-
-// ------- Notion File Upload API (3단계 중 create+send만 수행, attach는 block에서) -------
-// Notion SDK 2.3.0은 file_upload를 감싸지 않으므로 fetch로 직접 호출.
-// 검증: scripts/test-notion-file-upload.js
-async function uploadFileToNotion(fileBuffer, filename) {
-  const token = process.env.NOTION_TOKEN;
-
-  // Step 1: create
-  const createResp = await fetch('https://api.notion.com/v1/file_uploads', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Notion-Version': NOTION_VERSION,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      mode: 'single_part',
-      filename,
-      content_type: 'text/plain',
-    }),
-  });
-  if (!createResp.ok) {
-    const errText = await createResp.text();
-    throw new Error(`Notion file_upload create failed (HTTP ${createResp.status}): ${errText.slice(0, 300)}`);
-  }
-  const createData = await createResp.json();
-
-  // Step 2: send (multipart)
-  const form = new FormData();
-  form.append('file', new Blob([fileBuffer], { type: 'text/plain' }), filename);
-
-  const sendUrl = createData.upload_url || `https://api.notion.com/v1/file_uploads/${createData.id}/send`;
-  const sendResp = await fetch(sendUrl, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Notion-Version': NOTION_VERSION,
-      // Content-Type은 FormData가 boundary 포함해서 자동 설정
-    },
-    body: form,
-  });
-  if (!sendResp.ok) {
-    const errText = await sendResp.text();
-    throw new Error(`Notion file_upload send failed (HTTP ${sendResp.status}): ${errText.slice(0, 300)}`);
-  }
-
-  return createData.id;
-}
 
 // ------- Notion 블록 빌더 (api/process-meeting.js와 동기화 필요) -------
 
