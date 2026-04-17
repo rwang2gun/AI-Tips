@@ -70,6 +70,14 @@
 import { GoogleGenAI, createUserContent, createPartFromUri } from '@google/genai';
 import { Client as NotionClient } from '@notionhq/client';
 import { put, list, del } from '@vercel/blob';
+import { meetingSchema } from '../lib/schemas/meeting.js';
+import {
+  buildLegacyTranscribePrompt,
+  buildSegmentTranscribePrompt,
+} from '../lib/prompts/transcribe.js';
+import { buildSummarizePrompt, buildRefineTopicPrompt } from '../lib/prompts/summarize.js';
+import { fetchGlossary } from '../lib/glossary.js';
+import { fetchGuide } from '../lib/guide.js';
 
 export const config = {
   api: {
@@ -288,15 +296,7 @@ async function handleTranscribe(req, res) {
 
   const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-  const promptText = `첨부된 한국어 회의 녹음을 정확히 전사하세요.
-
-[규칙]
-1. 들리는 내용을 누락 없이 옮겨 쓸 것
-2. 발언자 구분은 하지 말고 발언 순서대로 작성
-3. "음", "어" 같은 군더더기는 생략하되 실제 의미 있는 말은 모두 포함
-4. 잘 안 들리는 구간은 [불분명] 으로 표시
-5. 문장 단위로 줄바꿈하여 가독성 확보
-6. 해설이나 요약 없이 들은 말만 옮겨 쓸 것`;
+  const promptText = buildLegacyTranscribePrompt();
 
   const result = await genAI.models.generateContent({
     model: 'gemini-2.5-flash',
@@ -390,20 +390,7 @@ async function handleTranscribeSegment(req, res) {
     return jsonResponse(res, 400, { error: 'Missing fileUri/fileMimeType' });
   }
 
-  const part = totalSegments
-    ? `이 오디오는 전체 회의 중 ${segmentIndex + 1}/${totalSegments} 번째 5분 구간입니다.`
-    : `이 오디오는 전체 회의의 한 구간입니다.`;
-
-  const promptText = `${part} 앞뒤 구간은 별도로 처리되니 이 구간만 정확히 한국어로 전사하세요.
-
-[규칙]
-1. 들리는 내용을 누락 없이 옮겨 쓸 것
-2. 발언자 구분은 하지 말고 발언 순서대로 작성
-3. "음", "어" 같은 군더더기는 생략하되 실제 의미 있는 말은 모두 포함
-4. 잘 안 들리는 구간은 [불분명] 으로 표시
-5. 문장 단위로 줄바꿈하여 가독성 확보
-6. 해설이나 요약 없이 들은 말만 옮겨 쓸 것
-7. 구간 시작/끝에 별도 표시(타임스탬프 등) 추가하지 말 것 — 본문만 출력`;
+  const promptText = buildSegmentTranscribePrompt({ segmentIndex, totalSegments });
 
   const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   const result = await withRetry(() =>
@@ -520,7 +507,10 @@ async function handleSummarize(req, res) {
   }
 
   // Notion 용어집 + 작성 가이드 조회 (가이드 없으면 빈 문자열로 프롬프트에서 생략됨)
-  const glossaryText = await fetchGlossary();
+  // header는 기존 api 프롬프트에 사용되던 문구 그대로 유지.
+  const glossaryText = await fetchGlossary({
+    header: '[용어집 — 아래 용어가 음성에서 들리면 정확한 표기를 사용하세요]',
+  });
   const guideText = await fetchGuide();
 
   const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -532,33 +522,12 @@ async function handleSummarize(req, res) {
     date: today,
   };
 
-  const promptText = `당신은 게임 기획 회의록 정리 전문가입니다. 아래 한국어 회의 전사문을 바탕으로 회의록을 작성하세요.
-
-[메타 정보]
-${JSON.stringify(meetingMeta, null, 2)}
-${glossaryText}${guideText}
-[전사문]
-${transcript}
-
-[작성 규칙]
-0. 위 [회의록 작성 가이드] 섹션이 있으면 이 규칙보다 우선합니다.
-1. 모든 응답은 한국어로 작성
-2. 발언자 구분은 하지 않고 내용 중심으로 정리
-3. 게임 기획 관련 회의일 가능성이 높음 (전투, 시스템, 밸런스, UI 등의 용어 자주 등장)
-4. 위 용어집에 있는 단어가 전사문에 있으면 반드시 해당 표기를 사용할 것
-5. requestedTitle이 있으면 그것을 title로 사용. 없으면 전사문을 요약한 30자 이내 제목 생성
-6. requestedMeetingType이 있으면 그것을 meetingType으로 사용. 없으면 내용에 맞게 선택
-7. labels는 회의에서 다룬 주제에 해당하는 것만 (없으면 빈 배열)
-8. agenda: 회의 시작 시 명시적으로 다룬 안건. 없으면 빈 배열
-9. discussion: 실제 오간 논의 (가장 중요)
-10. decisions: 명확히 합의/결정된 사항만
-11. todos: 누가 무엇을 언제까지 할지 명시된 액션 아이템
-12. **항목별 근거 인용 (sourceQuote)** — 사후 검토용 근거 자료, 본문에는 표시되지 않음
-   - discussion.points / decisions / todos 각 항목에 sourceQuote 필드 작성
-   - 인용은 전사문에서 그대로 가져온 10~80자 짧은 발췌 (변형/요약 금지)
-   - 한 항목 본문이 여러 발언에 기반하면 가장 결정적인 한 문장 선택
-   - 명시적 발언 없이 추정/유추로 작성한 항목은 sourceQuote를 빈 문자열로
-     (환각 시그널이므로 정직하게 빈 문자열을 두는 것이 중요)`;
+  const promptText = buildSummarizePrompt({
+    meetingMeta,
+    transcript,
+    glossaryText,
+    guideText,
+  });
 
   const result = await withRetry(() =>
     genAI.models.generateContent({
@@ -659,24 +628,7 @@ async function handleFinalizeNotion(req, res) {
 // 1차 요약(Flash) 결과의 topic이 50자 초과일 때 Pro로 한 번 더 짧게 압축.
 // 입력은 title + 1차 topic + agenda 제목들로 매우 작아서 빠르게 끝남.
 async function refineTopic(genAI, meetingData) {
-  const agendaTitles = (meetingData.agenda || [])
-    .map((a) => `- ${a.title}`)
-    .filter((s) => s.length > 2)
-    .join('\n');
-
-  const prompt = `다음은 게임 기획 회의의 1차 요약 결과입니다. topic 필드가 길어서 한 줄로 다시 압축이 필요합니다.
-
-[제목]
-${meetingData.title || '(없음)'}
-
-[현재 topic — ${meetingData.topic.length}자]
-${meetingData.topic}
-
-${agendaTitles ? `[아젠다 제목들]\n${agendaTitles}\n` : ''}
-요구사항:
-- 50자 이내 한 문장으로 회의의 본질적 주제만 표현
-- 아젠다 항목을 나열하지 말 것 ("A, B, C 논의" 같은 형태 금지)
-- 새로운 topic 한 줄만 출력. 따옴표/접두어/설명 없이 본문만.`;
+  const prompt = buildRefineTopicPrompt({ meetingData });
 
   const result = await genAI.models.generateContent({
     model: 'gemini-2.5-pro',
@@ -689,66 +641,6 @@ ${agendaTitles ? `[아젠다 제목들]\n${agendaTitles}\n` : ''}
   text = text.replace(/^["'`「『\[(](.*)["'`」』\])]$/s, '$1').trim();
   text = text.replace(/^[Tt]opic\s*[:：]\s*/, '').trim();
   return text;
-}
-
-// ------- Gemini 응답 스키마 -------
-
-function meetingSchema() {
-  // 항목별 "근거 인용"을 함께 받는 재사용 타입.
-  // sourceQuote가 빈 문자열이면 "명시적 발언 없음 = 환각/추정 의심" 신호로 활용.
-  const evidenced = {
-    type: 'object',
-    properties: {
-      text: { type: 'string', description: '항목 본문 (한국어)' },
-      sourceQuote: {
-        type: 'string',
-        description:
-          '이 항목의 근거가 된 전사문에서의 짧은 인용 (원문 그대로 10~80자). 명시적 발언 없이 추정/유추로 작성한 항목은 빈 문자열.',
-      },
-    },
-    required: ['text', 'sourceQuote'],
-  };
-
-  return {
-    type: 'object',
-    properties: {
-      title: { type: 'string', description: '회의 제목 (30자 이내)' },
-      topic: { type: 'string', description: '회의 주제 한 줄 요약 (50자 이내). 아젠다를 나열하지 말고 핵심만 짧게.' },
-      meetingType: {
-        type: 'string',
-        enum: ['킥오프', '내부 논의', '실무 논의', '기타'],
-      },
-      labels: {
-        type: 'array',
-        items: { type: 'string', enum: ['전투', '시스템', '밸런스', 'UI'] },
-      },
-      agenda: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            title: { type: 'string' },
-            items: { type: 'array', items: { type: 'string' } },
-          },
-          required: ['title', 'items'],
-        },
-      },
-      discussion: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            topic: { type: 'string' },
-            points: { type: 'array', items: evidenced },
-          },
-          required: ['topic', 'points'],
-        },
-      },
-      decisions: { type: 'array', items: evidenced },
-      todos: { type: 'array', items: evidenced },
-    },
-    required: ['title', 'topic', 'meetingType', 'labels', 'agenda', 'discussion', 'decisions', 'todos'],
-  };
 }
 
 // ------- Notion 페이지 생성 -------
@@ -1063,101 +955,6 @@ async function uploadTranscriptToNotion(transcriptText, filename) {
   }
 
   return createData.id;
-}
-
-// ------- 작성 가이드 조회 -------
-
-// 회의록 작성 가이드 Notion 페이지를 평문(markdown-like)으로 로드.
-// 사용자가 Notion에서 페이지만 수정하면 다음 회의록부터 자동 반영됨.
-// 실패 시 빈 문자열 반환 (요약 중단하지 않음).
-// 로컬 스크립트 scripts/process-recording-locally.js와 로직 동기화 유지.
-async function fetchGuide() {
-  const pageId = process.env.NOTION_GUIDE_PAGE_ID;
-  if (!pageId || !process.env.NOTION_TOKEN) return '';
-
-  try {
-    const notion = new NotionClient({ auth: process.env.NOTION_TOKEN });
-    const lines = await renderPageBlocks(notion, pageId);
-    const body = lines.join('\n').trim();
-    if (!body) return '';
-    return `\n[회의록 작성 가이드]\n${body}\n`;
-  } catch (e) {
-    console.warn('[fetchGuide] failed:', e?.message);
-    return '';
-  }
-}
-
-// Notion 페이지 children을 markdown-like 평문으로 렌더.
-// heading/paragraph/list/quote/divider/callout/table 지원, 그 외 블록은 조용히 스킵.
-async function renderPageBlocks(notion, blockId) {
-  const res = await notion.blocks.children.list({ block_id: blockId, page_size: 100 });
-  const getText = (rt) => (rt || []).map((t) => t.plain_text).join('');
-  const lines = [];
-
-  for (const b of res.results) {
-    switch (b.type) {
-      case 'heading_1': lines.push(`# ${getText(b.heading_1.rich_text)}`); break;
-      case 'heading_2': lines.push(`## ${getText(b.heading_2.rich_text)}`); break;
-      case 'heading_3': lines.push(`### ${getText(b.heading_3.rich_text)}`); break;
-      case 'paragraph': lines.push(getText(b.paragraph.rich_text)); break;
-      case 'bulleted_list_item': lines.push(`- ${getText(b.bulleted_list_item.rich_text)}`); break;
-      case 'numbered_list_item': lines.push(`1. ${getText(b.numbered_list_item.rich_text)}`); break;
-      case 'quote': lines.push(`> ${getText(b.quote.rich_text)}`); break;
-      case 'divider': lines.push('---'); break;
-      case 'callout': {
-        const icon = b.callout.icon?.emoji || '💡';
-        lines.push(`${icon} ${getText(b.callout.rich_text)}`);
-        break;
-      }
-      case 'table': {
-        if (b.has_children) {
-          const rows = await notion.blocks.children.list({ block_id: b.id, page_size: 100 });
-          for (const row of rows.results) {
-            if (row.type !== 'table_row') continue;
-            const cells = row.table_row.cells.map((cell) => getText(cell));
-            lines.push(`| ${cells.join(' | ')} |`);
-          }
-        }
-        break;
-      }
-      // 기타 블록은 조용히 스킵
-    }
-  }
-  return lines;
-}
-
-// ------- 용어집 조회 -------
-
-async function fetchGlossary() {
-  const glossaryDbId = process.env.NOTION_GLOSSARY_DB_ID;
-  if (!glossaryDbId) return '';
-
-  try {
-    const notion = new NotionClient({ auth: process.env.NOTION_TOKEN });
-    const response = await notion.databases.query({
-      database_id: glossaryDbId,
-      filter: {
-        property: '활성',
-        checkbox: { equals: true },
-      },
-      sorts: [{ property: '카테고리', direction: 'ascending' }],
-    });
-
-    if (!response.results.length) return '';
-
-    const terms = response.results.map((page) => {
-      const p = page.properties;
-      const term = p['용어']?.title?.[0]?.plain_text || '';
-      const desc = p['설명']?.rich_text?.[0]?.plain_text || '';
-      const cat = p['카테고리']?.select?.name || '';
-      return `- ${term}: ${desc}${cat ? ` [${cat}]` : ''}`;
-    });
-
-    return `\n[용어집 — 아래 용어가 음성에서 들리면 정확한 표기를 사용하세요]\n${terms.join('\n')}\n`;
-  } catch (e) {
-    console.warn('[fetchGlossary] failed:', e?.message);
-    return '';
-  }
 }
 
 // ------- 청크 정리 -------
