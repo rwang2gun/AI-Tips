@@ -67,37 +67,7 @@
 //   BLOB_READ_WRITE_TOKEN   — Vercel Blob 활성화 시 자동 등록
 // ============================================================
 
-import { createUserContent, createPartFromUri } from '@google/genai';
-import { meetingSchema } from '../lib/schemas/meeting.js';
-import {
-  buildLegacyTranscribePrompt,
-  buildSegmentTranscribePrompt,
-} from '../lib/prompts/transcribe.js';
-import { buildSummarizePrompt, buildRefineTopicPrompt } from '../lib/prompts/summarize.js';
-import { fetchGlossary } from '../lib/glossary.js';
-import { fetchGuide } from '../lib/guide.js';
-import { createGeminiClient } from '../lib/clients/gemini.js';
-import { createNotionClient } from '../lib/clients/notion.js';
-import {
-  putPublic,
-  list,
-  fetchBlobText,
-  fetchBlobJson,
-  findBlob,
-  deleteByPrefix,
-} from '../lib/clients/blob.js';
-import {
-  concatBlobChunks,
-  mergeSegmentTranscripts,
-  selectSegmentTranscriptBlobs,
-} from '../lib/audio/chunking.js';
-import {
-  uploadFileToNotion,
-  buildTranscriptFilename,
-} from '../lib/notion/file-upload.js';
-import { buildMeetingPageBlocks } from '../lib/notion/page-builder.js';
-import { readJsonBody, jsonResponse } from '../lib/http/body-parser.js';
-import { withRetry } from '../lib/http/retry.js';
+import { jsonResponse } from '../lib/http/body-parser.js';
 import handleUploadChunk from './handlers/upload-chunk.js';
 import handleCheckFile from './handlers/check-file.js';
 import handlePrepareSegment from './handlers/prepare-segment.js';
@@ -105,8 +75,8 @@ import handleTranscribeSegment from './handlers/transcribe-segment.js';
 import handleMergeTranscripts from './handlers/merge-transcripts.js';
 import handleSummarize from './handlers/summarize.js';
 import handleFinalizeNotion from './handlers/finalize-notion.js';
-import handlePrepare from './handlers/legacy/prepare.js';
-import handleTranscribe from './handlers/legacy/transcribe.js';
+import handleLegacyPrepare from './handlers/legacy/prepare.js';
+import handleLegacyTranscribe from './handlers/legacy/transcribe.js';
 
 export const config = {
   api: {
@@ -114,7 +84,19 @@ export const config = {
   },
 };
 
-// ------- 메인 핸들러 -------
+// X-Action → 핸들러 매핑. 각 핸들러의 시그니처: (req, res) => Promise<void>.
+// legacy(prepare/transcribe)는 recover.html의 단일 파일 세션 복구 전용.
+const handlers = {
+  'upload-chunk': handleUploadChunk,
+  'prepare-segment': handlePrepareSegment,
+  'check-file': handleCheckFile,
+  'transcribe-segment': handleTranscribeSegment,
+  'merge-transcripts': handleMergeTranscripts,
+  'summarize': handleSummarize,
+  'finalize-notion': handleFinalizeNotion,
+  'prepare': handleLegacyPrepare,
+  'transcribe': handleLegacyTranscribe,
+};
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -122,37 +104,13 @@ export default async function handler(req, res) {
   }
 
   const action = req.headers['x-action'];
+  const handle = handlers[action];
+  if (!handle) {
+    return jsonResponse(res, 400, { error: 'Unknown X-Action' });
+  }
 
   try {
-    if (action === 'upload-chunk') {
-      return await handleUploadChunk(req, res);
-    }
-    if (action === 'prepare-segment') {
-      return await handlePrepareSegment(req, res);
-    }
-    if (action === 'transcribe-segment') {
-      return await handleTranscribeSegment(req, res);
-    }
-    if (action === 'merge-transcripts') {
-      return await handleMergeTranscripts(req, res);
-    }
-    if (action === 'check-file') {
-      return await handleCheckFile(req, res);
-    }
-    if (action === 'summarize') {
-      return await handleSummarize(req, res);
-    }
-    if (action === 'finalize-notion') {
-      return await handleFinalizeNotion(req, res);
-    }
-    // legacy — recover.html에서 단일 파일 세션 복구 시 사용
-    if (action === 'prepare') {
-      return await handlePrepare(req, res);
-    }
-    if (action === 'transcribe') {
-      return await handleTranscribe(req, res);
-    }
-    return jsonResponse(res, 400, { error: 'Unknown X-Action' });
+    return await handle(req, res);
   } catch (err) {
     console.error('[process-meeting] error:', err);
     return jsonResponse(res, 500, {
