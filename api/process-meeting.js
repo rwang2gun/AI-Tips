@@ -104,6 +104,7 @@ import handlePrepareSegment from './handlers/prepare-segment.js';
 import handleTranscribeSegment from './handlers/transcribe-segment.js';
 import handleMergeTranscripts from './handlers/merge-transcripts.js';
 import handleSummarize from './handlers/summarize.js';
+import handleFinalizeNotion from './handlers/finalize-notion.js';
 
 export const config = {
   api: {
@@ -235,85 +236,5 @@ async function handleTranscribe(req, res) {
     ok: true,
     transcriptLength: transcript.length,
   });
-}
-
-// ------- 5단계: Notion 페이지 생성 + 세션 폴더 정리 -------
-
-async function handleFinalizeNotion(req, res) {
-  const body = await readJsonBody(req);
-  const { sessionId } = body;
-
-  if (!sessionId || !/^[0-9a-f-]{36}$/i.test(sessionId)) {
-    return jsonResponse(res, 400, { error: 'Invalid session id' });
-  }
-
-  const prefix = `meetings/${sessionId}/`;
-  const resultJson = await fetchBlobJson(`meetings/${sessionId}/result.json`);
-  if (!resultJson) {
-    return jsonResponse(res, 400, { error: 'No summary result found — run summarize first' });
-  }
-  const { meetingData, date } = resultJson;
-
-  // 전사 원문을 Notion에 업로드 (실패해도 페이지 생성은 진행)
-  // Blob을 청소하기 직전에 끌어올려 진단 자료로 영구 보존.
-  let transcriptUpload = null;
-  try {
-    const transcriptText = await fetchBlobText(`meetings/${sessionId}/transcript.txt`);
-    if (transcriptText != null) {
-      const filename = buildTranscriptFilename(meetingData.title, date);
-      // 기존 api 경로는 Blob 본문에 charset=utf-8 을 명시해 왔음 — blobContentType으로 보존.
-      const id = await uploadFileToNotion({
-        body: transcriptText,
-        filename,
-        contentType: 'text/plain',
-        blobContentType: 'text/plain;charset=utf-8',
-      });
-      transcriptUpload = { id, charCount: transcriptText.length };
-    }
-  } catch (e) {
-    console.warn('[transcript-upload] failed (페이지는 첨부 없이 생성):', e?.message);
-  }
-
-  // Notion 페이지 생성 (진단 토글 안에 transcript 첨부 + sourceQuote 매핑 포함)
-  const notionUrl = await createNotionPage(meetingData, date, transcriptUpload);
-
-  // 청크 + 전사 + 결과 파일 모두 정리 (전사는 이미 Notion에 첨부됐고, Gemini 파일은 48시간 후 자동 삭제)
-  try {
-    await deleteByPrefix(prefix);
-  } catch (e) {
-    console.warn('[cleanup] failed:', e?.message);
-  }
-
-  return jsonResponse(res, 200, {
-    ok: true,
-    title: meetingData.title,
-    notionUrl,
-  });
-}
-
-// ------- Notion 페이지 생성 -------
-
-async function createNotionPage(data, dateStr, transcriptUpload = null) {
-  const notion = await createNotionClient();
-  const databaseId = process.env.NOTION_DATABASE_ID;
-
-  const properties = {
-    '이름': { title: [{ text: { content: data.title } }] },
-    '회의 날짜': { date: { start: dateStr } },
-    '회의 유형': { select: { name: data.meetingType } },
-  };
-  if (data.labels?.length) {
-    properties['레이블'] = { multi_select: data.labels.map((name) => ({ name })) };
-  }
-
-  const children = buildMeetingPageBlocks(data, transcriptUpload);
-
-  const page = await notion.pages.create({
-    parent: { database_id: databaseId },
-    properties,
-    children,
-  });
-
-  return page.url;
 }
 
