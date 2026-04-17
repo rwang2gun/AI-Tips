@@ -105,6 +105,8 @@ import handleTranscribeSegment from './handlers/transcribe-segment.js';
 import handleMergeTranscripts from './handlers/merge-transcripts.js';
 import handleSummarize from './handlers/summarize.js';
 import handleFinalizeNotion from './handlers/finalize-notion.js';
+import handlePrepare from './handlers/legacy/prepare.js';
+import handleTranscribe from './handlers/legacy/transcribe.js';
 
 export const config = {
   api: {
@@ -158,83 +160,5 @@ export default async function handler(req, res) {
       stack: process.env.NODE_ENV === 'development' ? err?.stack : undefined,
     });
   }
-}
-
-// ------- 1단계: 청크 결합 + Gemini Files API 업로드 -------
-
-async function handlePrepare(req, res) {
-  const body = await readJsonBody(req);
-  const { sessionId, mimeType } = body;
-
-  if (!sessionId || !/^[0-9a-f-]{36}$/i.test(sessionId)) {
-    return jsonResponse(res, 400, { error: 'Invalid session id' });
-  }
-
-  const prefix = `meetings/${sessionId}/`;
-  const { blobs } = await list({ prefix });
-  if (!blobs.length) {
-    return jsonResponse(res, 400, { error: 'No audio chunks found for session' });
-  }
-  const audioBuffer = await concatBlobChunks(blobs);
-
-  // Gemini Files API에 업로드 — PROCESSING 상태 대기는 클라이언트에서 check-file로 폴링
-  const genAI = createGeminiClient();
-  const audioBlob = new Blob([audioBuffer], { type: mimeType || 'audio/webm' });
-
-  const uploaded = await genAI.files.upload({
-    file: audioBlob,
-    config: { mimeType: mimeType || 'audio/webm' },
-  });
-
-  return jsonResponse(res, 200, {
-    ok: true,
-    fileName: uploaded.name,
-    fileUri: uploaded.uri,
-    fileMimeType: uploaded.mimeType,
-    state: uploaded.state,
-  });
-}
-
-// ------- 3단계: Gemini 오디오 → 한국어 전사문 -------
-
-async function handleTranscribe(req, res) {
-  const body = await readJsonBody(req);
-  const { sessionId, fileUri, fileMimeType } = body;
-
-  if (!sessionId || !/^[0-9a-f-]{36}$/i.test(sessionId)) {
-    return jsonResponse(res, 400, { error: 'Invalid session id' });
-  }
-  if (!fileUri || !fileMimeType) {
-    return jsonResponse(res, 400, { error: 'Missing fileUri/fileMimeType' });
-  }
-
-  const genAI = createGeminiClient();
-
-  const promptText = buildLegacyTranscribePrompt();
-
-  const result = await genAI.models.generateContent({
-    model: 'gemini-2.5-flash',
-    contents: [
-      createUserContent([
-        promptText,
-        createPartFromUri(fileUri, fileMimeType),
-      ]),
-    ],
-  });
-
-  const transcript = result.text || '';
-  if (!transcript.trim()) {
-    return jsonResponse(res, 500, { error: 'Empty transcript from Gemini' });
-  }
-
-  // 전사문을 Blob에 저장 (다음 단계 summarize에서 읽음)
-  await putPublic(`meetings/${sessionId}/transcript.txt`, transcript, {
-    contentType: 'text/plain; charset=utf-8',
-  });
-
-  return jsonResponse(res, 200, {
-    ok: true,
-    transcriptLength: transcript.length,
-  });
 }
 
