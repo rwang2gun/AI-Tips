@@ -7,6 +7,9 @@
   "engines": {
     "node": "20.x"
   },
+  "scripts": {
+    "test": "node --test \"tests/**/*.test.js\""
+  },
   "dependencies": {
     "@google/genai": "^1.0.0",
     "@notionhq/client": "^2.3.0",

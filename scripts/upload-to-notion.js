@@ -28,14 +28,15 @@
 //   discussion, decisions, todos)를 유지해야 함.
 // ============================================================
 
-import { Client as NotionClient } from '@notionhq/client';
 import { Agent, setGlobalDispatcher } from 'undici';
 import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import path from 'node:path';
-
-// Notion File Upload API 사용 시 헤더 버전
-const NOTION_VERSION = '2022-06-28';
+import { createNotionClient } from '../lib/clients/notion.js';
+import {
+  uploadFileToNotion,
+  buildTranscriptFilename,
+} from '../lib/notion/file-upload.js';
+import { createMeetingNotionPage } from '../lib/notion/page-create.js';
 
 // process-recording-locally.js와 동일하게 undici 타임아웃 제거.
 // Notion children 많을 때 응답이 느려질 수 있어 안전하게 무제한.
@@ -117,7 +118,13 @@ if (transcriptPath) {
   const safeFilename = buildTranscriptFilename(meetingData.title, date);
   const fileBuffer = await fs.readFile(transcriptPath);
   const charCount = (await fs.readFile(transcriptPath, 'utf-8')).length;
-  const fileUploadId = await uploadFileToNotion(fileBuffer, safeFilename);
+  // 기존 로컬 경로는 Blob 본문에 charset 명시 없이 'text/plain' 만 사용 — 동작 보존.
+  const fileUploadId = await uploadFileToNotion({
+    body: fileBuffer,
+    filename: safeFilename,
+    contentType: 'text/plain',
+    blobContentType: 'text/plain',
+  });
   transcriptFileUpload = { id: fileUploadId, filename: safeFilename, charCount };
   console.log(`      Uploaded as "${safeFilename}" (id: ${fileUploadId}, ${charCount.toLocaleString()}자)`);
   console.log('');
@@ -127,327 +134,16 @@ if (transcriptPath) {
 
 console.log('Creating Notion page...');
 
-const notion = new NotionClient({ auth: process.env.NOTION_TOKEN });
+const notion = await createNotionClient();
 const databaseId = process.env.NOTION_DATABASE_ID;
 
-const properties = {
-  '이름': { title: [{ text: { content: meetingData.title } }] },
-  '회의 날짜': { date: { start: date } },
-  '회의 유형': { select: { name: meetingData.meetingType } },
-};
-if (meetingData.labels?.length) {
-  properties['레이블'] = { multi_select: meetingData.labels.map((name) => ({ name })) };
-}
-
-const children = buildBlocks(meetingData, transcriptFileUpload);
-
-const page = await notion.pages.create({
-  parent: { database_id: databaseId },
-  properties,
-  children,
+const page = await createMeetingNotionPage({
+  notion,
+  databaseId,
+  meetingData,
+  date,
+  transcriptUpload: transcriptFileUpload,
 });
 
 console.log('');
 console.log(`Created: ${page.url}`);
-
-// ------- 전사 원문 파일명 생성 -------
-// 형식: 전사원문_{YYYY-MM-DD}_{safeTitle}.txt
-// 제목에서 OS 금지 문자 제거 + 공백을 _ 로 치환, 한글은 그대로 허용
-function buildTranscriptFilename(title, date) {
-  const safe = (title || 'untitled')
-    .replace(/[\\/:*?"<>|]/g, '') // Windows/Mac/Linux 공통 금지 문자
-    .replace(/\s+/g, '_')
-    .slice(0, 80); // 너무 긴 제목 방어
-  return `전사원문_${date}_${safe}.txt`;
-}
-
-// ------- Notion File Upload API (3단계 중 create+send만 수행, attach는 block에서) -------
-// Notion SDK 2.3.0은 file_upload를 감싸지 않으므로 fetch로 직접 호출.
-// 검증: scripts/test-notion-file-upload.js
-async function uploadFileToNotion(fileBuffer, filename) {
-  const token = process.env.NOTION_TOKEN;
-
-  // Step 1: create
-  const createResp = await fetch('https://api.notion.com/v1/file_uploads', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Notion-Version': NOTION_VERSION,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      mode: 'single_part',
-      filename,
-      content_type: 'text/plain',
-    }),
-  });
-  if (!createResp.ok) {
-    const errText = await createResp.text();
-    throw new Error(`Notion file_upload create failed (HTTP ${createResp.status}): ${errText.slice(0, 300)}`);
-  }
-  const createData = await createResp.json();
-
-  // Step 2: send (multipart)
-  const form = new FormData();
-  form.append('file', new Blob([fileBuffer], { type: 'text/plain' }), filename);
-
-  const sendUrl = createData.upload_url || `https://api.notion.com/v1/file_uploads/${createData.id}/send`;
-  const sendResp = await fetch(sendUrl, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Notion-Version': NOTION_VERSION,
-      // Content-Type은 FormData가 boundary 포함해서 자동 설정
-    },
-    body: form,
-  });
-  if (!sendResp.ok) {
-    const errText = await sendResp.text();
-    throw new Error(`Notion file_upload send failed (HTTP ${sendResp.status}): ${errText.slice(0, 300)}`);
-  }
-
-  return createData.id;
-}
-
-// ------- Notion 블록 빌더 (api/process-meeting.js와 동기화 필요) -------
-
-// 항목 호환 헬퍼: 신 schema는 {text, sourceQuote}, 구 schema는 plain string
-function itemText(x) { return typeof x === 'string' ? x : (x?.text || ''); }
-function itemQuote(x) { return typeof x === 'string' ? '' : (x?.sourceQuote || ''); }
-
-function buildBlocks(data, transcriptFileUpload = null) {
-  const text = (s) => [{ type: 'text', text: { content: s } }];
-  const bold = (s) => [{ type: 'text', text: { content: s }, annotations: { bold: true } }];
-
-  const bullet = (richText, children) => {
-    const b = {
-      object: 'block',
-      type: 'bulleted_list_item',
-      bulleted_list_item: { rich_text: richText },
-    };
-    if (children && children.length) b.bulleted_list_item.children = children;
-    return b;
-  };
-  const bullets = (items) => items.map((s) => bullet(text(s)));
-
-  const heading2 = (emoji, title) => ({
-    object: 'block',
-    type: 'heading_2',
-    heading_2: { rich_text: text(`${emoji} ${title}`) },
-  });
-  const heading3 = (content) => ({
-    object: 'block',
-    type: 'heading_3',
-    heading_3: { rich_text: text(content) },
-  });
-
-  const blocks = [];
-
-  // ===== 메타 영역: 2단 컬럼 × 연한 회색 콜아웃 =====
-  // (템플릿성 수동 편집 영역 — 본문과 시각적으로 구분)
-  blocks.push({
-    object: 'block',
-    type: 'column_list',
-    column_list: {
-      children: [
-        {
-          object: 'block',
-          type: 'column',
-          column: {
-            children: [
-              {
-                object: 'block',
-                type: 'callout',
-                callout: {
-                  icon: { type: 'emoji', emoji: '✅' },
-                  color: 'gray_background',
-                  rich_text: bold('기본 정보'),
-                  children: [
-                    bullet([
-                      { type: 'text', text: { content: '회의 주제: ' }, annotations: { bold: true } },
-                      { type: 'text', text: { content: data.topic || '' } },
-                    ]),
-                    bullet(bold('회의 자료:')),
-                    bullet(bold('관련 일감:')),
-                  ],
-                },
-              },
-            ],
-          },
-        },
-        {
-          object: 'block',
-          type: 'column',
-          column: {
-            children: [
-              {
-                object: 'block',
-                type: 'callout',
-                callout: {
-                  icon: { type: 'emoji', emoji: '🚩' },
-                  color: 'gray_background',
-                  rich_text: bold('후속 진행 업무'),
-                  children: [
-                    bullet([{
-                      type: 'text',
-                      text: { content: 'Jira 일감 복사' },
-                      annotations: { italic: true, color: 'yellow' },
-                    }]),
-                  ],
-                },
-              },
-            ],
-          },
-        },
-      ],
-    },
-  });
-
-  blocks.push({ object: 'block', type: 'divider', divider: {} });
-
-  // ===== 본문: heading_2 섹션 × 4 (sourceQuote는 진단 토글에서만 노출) =====
-
-  // 📌 아젠다
-  blocks.push(heading2('📌', '아젠다'));
-  if ((data.agenda || []).length === 0) {
-    blocks.push(bullet(text('(명시된 아젠다 없음)')));
-  } else {
-    for (const a of data.agenda) {
-      blocks.push(bullet(bold(a.title), bullets(a.items || [])));
-    }
-  }
-
-  // 💬 논의 사항 — 토픽은 heading_3로 승격, 포인트는 평평한 bullets
-  blocks.push(heading2('💬', '논의 사항'));
-  if ((data.discussion || []).length === 0) {
-    blocks.push(bullet(text('(논의 내용 없음)')));
-  } else {
-    for (const d of data.discussion) {
-      blocks.push(heading3(d.topic));
-      for (const p of d.points || []) {
-        blocks.push(bullet(text(itemText(p))));
-      }
-    }
-  }
-
-  // 🎯 결정 사항
-  blocks.push(heading2('🎯', '결정 사항'));
-  if ((data.decisions || []).length === 0) {
-    blocks.push(bullet(text('(결정된 사항 없음)')));
-  } else {
-    for (const d of data.decisions) {
-      blocks.push(bullet(text(itemText(d))));
-    }
-  }
-
-  // ✅ To-do
-  blocks.push(heading2('✅', 'To-do'));
-  const todoItems = (data.todos || []).length
-    ? data.todos.map((t) => ({
-        object: 'block',
-        type: 'to_do',
-        to_do: { rich_text: text(itemText(t)), checked: false },
-      }))
-    : [{
-        object: 'block',
-        type: 'to_do',
-        to_do: { rich_text: text(''), checked: false },
-      }];
-  blocks.push(...todoItems);
-
-  // ===== 진단 토글: 전사 원문 + 항목별 근거 인용 매핑 =====
-  const evidenceChildren = buildEvidenceBlocks(data, transcriptFileUpload);
-  if (evidenceChildren.length) {
-    blocks.push({ object: 'block', type: 'divider', divider: {} });
-    blocks.push({
-      object: 'block',
-      type: 'toggle',
-      toggle: {
-        rich_text: [{
-          type: 'text',
-          text: { content: '🔍 검토 자료 (전사 원문 + 항목별 근거 인용)' },
-          annotations: { color: 'gray' },
-        }],
-        children: evidenceChildren,
-      },
-    });
-  }
-
-  return blocks;
-}
-
-// 진단 토글 안에 들어갈 블록들: 전사 파일 + 항목별 (text — 인용/⚠️ 근거 없음)
-function buildEvidenceBlocks(data, transcriptFileUpload) {
-  const text = (s) => [{ type: 'text', text: { content: s } }];
-  const bold = (s) => [{ type: 'text', text: { content: s }, annotations: { bold: true } }];
-  const heading3 = (content) => ({
-    object: 'block', type: 'heading_3', heading_3: { rich_text: text(content) },
-  });
-
-  const evidenceBullet = (mainText, quote) => {
-    const parts = [{ type: 'text', text: { content: mainText } }];
-    if (quote && quote.trim()) {
-      const truncated = quote.length > 100 ? quote.slice(0, 100) + '…' : quote;
-      parts.push({
-        type: 'text',
-        text: { content: `  「${truncated}」` },
-        annotations: { italic: true, color: 'gray' },
-      });
-    } else {
-      parts.push({
-        type: 'text',
-        text: { content: '  ⚠️ 근거 없음 (환각/추정 의심)' },
-        annotations: { italic: true, color: 'red' },
-      });
-    }
-    return {
-      object: 'block', type: 'bulleted_list_item',
-      bulleted_list_item: { rich_text: parts },
-    };
-  };
-
-  const blocks = [];
-
-  if (transcriptFileUpload) {
-    blocks.push({
-      object: 'block', type: 'file',
-      file: {
-        type: 'file_upload',
-        file_upload: { id: transcriptFileUpload.id },
-        caption: [{
-          type: 'text',
-          text: { content: `회의 전사 원문 (${transcriptFileUpload.charCount.toLocaleString()}자)` },
-        }],
-      },
-    });
-  }
-
-  if ((data.decisions || []).length) {
-    blocks.push(heading3('🎯 결정 사항 — 근거 인용'));
-    for (const d of data.decisions) {
-      blocks.push(evidenceBullet(itemText(d), itemQuote(d)));
-    }
-  }
-
-  if ((data.todos || []).length) {
-    blocks.push(heading3('✅ To-do — 근거 인용'));
-    for (const td of data.todos) {
-      blocks.push(evidenceBullet(itemText(td), itemQuote(td)));
-    }
-  }
-
-  if ((data.discussion || []).length) {
-    blocks.push(heading3('💬 논의 사항 — 근거 인용'));
-    for (const disc of data.discussion) {
-      blocks.push({
-        object: 'block', type: 'paragraph',
-        paragraph: { rich_text: bold(disc.topic) },
-      });
-      for (const p of disc.points || []) {
-        blocks.push(evidenceBullet(itemText(p), itemQuote(p)));
-      }
-    }
-  }
-
-  return blocks;
-}

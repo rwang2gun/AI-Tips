@@ -18,7 +18,7 @@
 //   기본 출력 경로: ./recovered-<sessionId-앞8자>.webm
 // ============================================================
 
-import { list } from '@vercel/blob';
+import { list } from '../lib/clients/blob.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { Buffer } from 'node:buffer';
