@@ -222,6 +222,10 @@ function resumeRecording() {
 }
 
 function finalizeRecording() {
+  // paused 상태에서 종료하면 pause 구간은 실제 녹음 시간에서 제외.
+  // state 전이 전에 durationMs를 계산해야 함.
+  const durationMs = state === 'paused' ? accumulatedMs : (Date.now() - startedAt);
+
   stopVisualizer();
   if (stream) stream.getTracks().forEach((t) => t.stop());
   if (audioCtx) audioCtx.close().catch(() => {});
@@ -241,7 +245,7 @@ function finalizeRecording() {
     return;
   }
 
-  processMeeting(segments);
+  processMeeting(segments, Math.floor(durationMs / 1000));
 }
 
 function drawVisualizer() {
@@ -278,7 +282,7 @@ function stopVisualizer() {
   if (vizFrame) cancelAnimationFrame(vizFrame);
 }
 
-async function processMeeting(segs) {
+async function processMeeting(segs, durationSec) {
   showSection('processing');
 
   const sessionId = crypto.randomUUID();
@@ -381,7 +385,7 @@ async function processMeeting(segs) {
         sessionId,
         title: els.meetingTitle.value || null,
         meetingType: els.meetingType.value || null,
-        durationSec: Math.floor((Date.now() - startedAt) / 1000),
+        durationSec,
       }),
     });
     if (!sumRes.ok) throw new Error(`요약 실패: ${await sumRes.text()}`);

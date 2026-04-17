@@ -115,8 +115,9 @@ export default async function handler(req, res) {
   } catch (err) {
     console.error('[process-meeting] error:', err);
     // Vercel Hobby 로그 1시간 한계 대응 — 에러 본문을 Blob에 영구 보존.
-    // body는 이미 핸들러에서 소비했을 수 있어 sessionId는 X-Session-Id 헤더만 참조.
-    const sessionId = req.headers['x-session-id'] || null;
+    // sessionId 출처: ① upload-chunk는 X-Session-Id 헤더
+    //                 ② JSON body 기반 핸들러는 readJsonBody가 req._sessionId 에 캐싱.
+    const sessionId = req._sessionId || req.headers['x-session-id'] || null;
     const logKey = await logError(sessionId, err, {
       action,
       method: req.method,
