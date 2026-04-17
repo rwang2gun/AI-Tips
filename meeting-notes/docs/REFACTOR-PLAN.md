@@ -1,6 +1,6 @@
 # 리팩터 Plan — 하네스 엔지니어링 구조 전환
 
-> 지속 업데이트를 위한 모듈 분리 리팩터 계획. 구현 전 Codex 리뷰 예정.
+> 지속 업데이트를 위한 모듈 분리 리팩터 계획. 구현 전 `/codex:review` 호출 예정 (`/codex:rescue` 아님).
 
 ## 배경
 
@@ -108,15 +108,16 @@ tests/                         # NEW
 
 ## Phase 순서
 
-각 Phase 끝에 Codex 리뷰 → 수정 → 다음 Phase.
+각 Phase 끝에 `/codex:review` 호출 → 수정 → 다음 Phase.
+(진단·디버깅이 필요할 때만 `/codex:rescue`를 별도 호출. 일상 리뷰 단계에서는 `/codex:review` 사용.)
 
 | Phase | 내용 | 검증 |
 |---|---|---|
-| **A** | `lib/schemas`, `lib/prompts`, `lib/glossary`, `lib/synonyms`, `lib/guide` 추출 | 단위 테스트 + Codex 리뷰 |
-| **B** | `lib/clients/*`, `lib/notion/file-upload`, `lib/audio/chunking`, `lib/transcript/post-process`, `lib/http/body-parser` | 단위 테스트 + Codex 리뷰 |
-| **C** | `lib/notion/page-builder` (buildBlocks 통합 — 가장 큰 중복) | 스냅샷 테스트 + Codex 리뷰 |
-| **D** | `api/handlers/*` 분리 + [api/process-meeting.js](../../api/process-meeting.js) 라우터화 | 핸들러 통합 테스트 + Codex 리뷰 |
-| **E** | `scripts/*` 가 `lib/*` 사용하도록 변환 | 수동 실행 검증 + Codex 리뷰 |
+| **A** | `lib/schemas`, `lib/prompts`, `lib/glossary`, `lib/synonyms`, `lib/guide` 추출 | 단위 테스트 + `/codex:review` |
+| **B** | `lib/clients/*`, `lib/notion/file-upload`, `lib/audio/chunking`, `lib/transcript/post-process`, `lib/http/body-parser` | 단위 테스트 + `/codex:review` |
+| **C** | `lib/notion/page-builder` (buildBlocks 통합 — 가장 큰 중복) | 스냅샷 테스트 + `/codex:review` |
+| **D** | `api/handlers/*` 분리 + [api/process-meeting.js](../../api/process-meeting.js) 라우터화 | 핸들러 통합 테스트 + `/codex:review` |
+| **E** | `scripts/*` 가 `lib/*` 사용하도록 변환 | 수동 실행 검증 + `/codex:review` |
 
 ## 테스트 전략
 
@@ -151,7 +152,7 @@ tests/                         # NEW
 | Gemini 싱글톤이 serverless cold start에서 문제? | 팩토리 패턴 + lazy init, 핸들러마다 `getClient()` 호출 |
 | Phase D 한 번에 1111줄 분리 — 리뷰 어려움 | action당 1 commit으로 쪼개서 작업 (리뷰 단위 축소) |
 
-## 열린 질문 (Codex 리뷰 요청 포인트)
+## 열린 질문 (`/codex:review` 요청 포인트)
 
 1. 모듈 경계 적절한가? 빠진/불필요한 모듈? 순환 위험?
 2. Phase 순서 A→E 안전? C를 B보다 앞으로?
