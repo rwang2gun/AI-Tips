@@ -99,6 +99,7 @@ import { buildMeetingPageBlocks } from '../lib/notion/page-builder.js';
 import { readJsonBody, jsonResponse } from '../lib/http/body-parser.js';
 import { withRetry } from '../lib/http/retry.js';
 import handleUploadChunk from './handlers/upload-chunk.js';
+import handleCheckFile from './handlers/check-file.js';
 
 export const config = {
   api: {
@@ -186,27 +187,6 @@ async function handlePrepare(req, res) {
     fileUri: uploaded.uri,
     fileMimeType: uploaded.mimeType,
     state: uploaded.state,
-  });
-}
-
-// ------- 2단계: Gemini 파일 처리 상태 확인 (클라이언트가 폴링) -------
-
-async function handleCheckFile(req, res) {
-  const body = await readJsonBody(req);
-  const { fileName } = body;
-
-  if (!fileName || typeof fileName !== 'string' || !fileName.startsWith('files/')) {
-    return jsonResponse(res, 400, { error: 'Invalid fileName' });
-  }
-
-  const genAI = createGeminiClient();
-  const fileInfo = await genAI.files.get({ name: fileName });
-
-  return jsonResponse(res, 200, {
-    ok: true,
-    state: fileInfo.state,
-    fileUri: fileInfo.uri,
-    fileMimeType: fileInfo.mimeType,
   });
 }
 
