@@ -68,6 +68,7 @@
 // ============================================================
 
 import { jsonResponse } from '../lib/http/body-parser.js';
+import { logError } from '../lib/logging.js';
 import handleUploadChunk from './handlers/upload-chunk.js';
 import handleCheckFile from './handlers/check-file.js';
 import handlePrepareSegment from './handlers/prepare-segment.js';
@@ -113,9 +114,18 @@ export default async function handler(req, res) {
     return await handle(req, res);
   } catch (err) {
     console.error('[process-meeting] error:', err);
+    // Vercel Hobby 로그 1시간 한계 대응 — 에러 본문을 Blob에 영구 보존.
+    // body는 이미 핸들러에서 소비했을 수 있어 sessionId는 X-Session-Id 헤더만 참조.
+    const sessionId = req.headers['x-session-id'] || null;
+    const logKey = await logError(sessionId, err, {
+      action,
+      method: req.method,
+      url: req.url,
+    });
     return jsonResponse(res, 500, {
       error: err?.message || 'Internal server error',
       stack: process.env.NODE_ENV === 'development' ? err?.stack : undefined,
+      logKey: logKey || undefined,
     });
   }
 }
