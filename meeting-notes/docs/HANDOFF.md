@@ -86,7 +86,7 @@ AI-Tips/
 │       ├── MEETING-NOTES-PIPELINE.md  # 현재 7단계 파이프라인 명세
 │       ├── RECOVERY-PLAN.md    # 4단계 복구/개선 계획
 │       ├── REFACTOR-PLAN.md    # 모듈 리팩터 계획
-│       └── work_log_*.md       # PR별/이벤트별 상세 (17개)
+│       └── work-log-archive/   # PR별/이벤트별 상세 (work_log_*.md 20개)
 │
 ├── api/
 │   ├── process-meeting.js      # 서버리스: 7단계 파이프라인 + legacy 3단계
