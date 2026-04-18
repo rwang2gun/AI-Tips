@@ -274,6 +274,8 @@ async function startRecording() {
   pauseRequested = false;
   accumulatedMs = 0;
   startedAt = Date.now();
+  // 진행 로그(manifest)에 녹음 시작 시각 박제 — wall clock 기준.
+  currentSession.startedAtIso = new Date(startedAt).toISOString();
 
   els.timer.textContent = '00:00';
   startTimer();
@@ -421,6 +423,8 @@ function finalizeRecording() {
   session.phase = 'awaiting';
   session.durationSec = Math.floor(durationMs / 1000);
   session.totalSegments = segments.length;
+  // 진행 로그(manifest)에 녹음 종료 시각 박제 — finalize-notion 요청 시 전송.
+  session.endedAtIso = new Date().toISOString();
 
   showSection('processing');
   renderPipelineStatus(session);
@@ -645,7 +649,12 @@ async function runFinalization(session) {
   const res = await fetchWithRetry('/api/process-meeting', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Action': 'finalize-notion' },
-    body: JSON.stringify({ sessionId: session.id }),
+    body: JSON.stringify({
+      sessionId: session.id,
+      startedAtIso: session.startedAtIso,
+      endedAtIso: session.endedAtIso,
+      durationSec: session.durationSec,
+    }),
   }, { session, label: 'Notion 저장' });
   if (session !== currentSession) return;
 

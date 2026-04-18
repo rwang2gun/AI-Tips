@@ -78,8 +78,9 @@ export default async function handleSummarize(req, res) {
     }
   }
 
-  // 결과 JSON을 Blob에 저장 (다음 단계 finalize-notion에서 읽음)
-  const payload = { meetingData, date: today };
+  // 결과 JSON을 Blob에 저장 (다음 단계 finalize-notion에서 읽음).
+  // model은 진행 로그(manifest) 생성을 위해 보존 — Flash/Pro 드리프트 사후 확인 용도.
+  const payload = { meetingData, date: today, model: 'gemini-2.5-pro' };
   await putPublic(`meetings/${sessionId}/result.json`, JSON.stringify(payload), {
     contentType: 'application/json',
   });
