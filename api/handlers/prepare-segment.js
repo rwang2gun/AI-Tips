@@ -1,5 +1,5 @@
 import { createGeminiClient } from '../../lib/clients/gemini.js';
-import { list } from '../../lib/clients/blob.js';
+import { listAllBlobs } from '../../lib/clients/blob.js';
 import { concatBlobChunks } from '../../lib/audio/chunking.js';
 import { readJsonBody, jsonResponse } from '../../lib/http/body-parser.js';
 import { withRetry } from '../../lib/http/retry.js';
@@ -17,7 +17,7 @@ export default async function handlePrepareSegment(req, res) {
   }
 
   const segPrefix = `meetings/${sessionId}/seg-${String(segmentIndex).padStart(2, '0')}/`;
-  const { blobs } = await list({ prefix: segPrefix });
+  const blobs = await listAllBlobs(segPrefix);
   if (!blobs.length) {
     return jsonResponse(res, 400, { error: `No chunks found for segment ${segmentIndex}` });
   }

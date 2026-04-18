@@ -1,7 +1,7 @@
 // recover.html 호환용 legacy 핸들러 — 단일 파일(세그먼트 분할 전) 세션 복구에만 사용.
 // 신규 녹음은 prepare-segment 경로를 쓴다.
 import { createGeminiClient } from '../../../lib/clients/gemini.js';
-import { list } from '../../../lib/clients/blob.js';
+import { listAllBlobs } from '../../../lib/clients/blob.js';
 import { concatBlobChunks } from '../../../lib/audio/chunking.js';
 import { readJsonBody, jsonResponse } from '../../../lib/http/body-parser.js';
 
@@ -15,7 +15,7 @@ export default async function handlePrepare(req, res) {
   }
 
   const prefix = `meetings/${sessionId}/`;
-  const { blobs } = await list({ prefix });
+  const blobs = await listAllBlobs(prefix);
   if (!blobs.length) {
     return jsonResponse(res, 400, { error: 'No audio chunks found for session' });
   }

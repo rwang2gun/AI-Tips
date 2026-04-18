@@ -44,7 +44,16 @@ if (!process.env.BLOB_READ_WRITE_TOKEN) {
 
 const prefix = `meetings/${sessionId}/`;
 console.log(`Listing blobs under ${prefix} ...`);
-const { blobs } = await list({ prefix });
+// 긴 세션(예: 30초 세그먼트 × 100+개)은 list()가 한 페이지에 다 안 담기므로 cursor로 전부 가져옴.
+const blobs = [];
+{
+  let cursor;
+  do {
+    const result = await list({ prefix, cursor });
+    blobs.push(...result.blobs);
+    cursor = result.cursor;
+  } while (cursor);
+}
 
 if (!blobs.length) {
   console.error(`No blobs found under ${prefix}`);

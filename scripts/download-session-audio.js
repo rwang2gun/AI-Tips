@@ -18,7 +18,7 @@
 //   기본 출력 경로: ./recovered-<sessionId-앞8자>.webm
 // ============================================================
 
-import { list } from '../lib/clients/blob.js';
+import { listAllBlobs } from '../lib/clients/blob.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { Buffer } from 'node:buffer';
@@ -55,7 +55,7 @@ console.log('');
 console.log('Listing blobs...');
 
 const prefix = `meetings/${sessionId}/`;
-const { blobs } = await list({ prefix });
+const blobs = await listAllBlobs(prefix);
 
 if (!blobs.length) {
   console.error(`ERROR: No blobs found under prefix "${prefix}"`);

@@ -12,6 +12,15 @@ const RETRY_CAP_MS = 10000;
 const POLL_MAX_ATTEMPTS = 60; // 최대 약 2분
 const POLL_INTERVAL_MS = 2000;
 
+// summarize만 별도 관용치. Gemini Pro가 "긴 입력 + structured output"에
+// 503 UNAVAILABLE을 뱉는 빈도가 높음(WORK-LOG PR #9/#10 교훈). 서버 withRetry가
+// 이미 3회 재시도하므로, 클라 1회 재시도 = 서버 3회 사이클. 충분한 간격으로
+// 5번까지 재시도(최대 누적 대기 ~60s, Gemini demand spike 완화 기회).
+// merge는 Gemini 비사용, finalize-notion은 Notion API라 503 무관 + 중복 페이지
+// 생성 리스크 있으므로 기존 3회 유지.
+const SUMMARIZE_RETRY_ATTEMPTS = 5;
+const SUMMARIZE_RETRY_CAP_MS = 30000;
+
 // 동시성 세마포어. 재시도/일시정지 버스트 시 Gemini/Vercel rate-limit 폭주 방지용.
 // 정상 진행은 5분 간격이라 N=1이지만 버스트 상황에서 의미 있음.
 const PREPARE_CONCURRENCY = 2;
@@ -126,6 +135,7 @@ function createSession() {
     durationSec: 0,
     totalSegments: 0,
     finalizationStarted: false,
+    finalizeAttempt: null, // { next, max, backoffMs } — 재시도 대기 중일 때만
   };
 }
 
@@ -157,7 +167,15 @@ function waitWithSignals(ms, signal) {
 }
 
 // 4xx는 즉시 throw, 5xx/network는 지수 백오프 재시도. AbortError는 그대로 전파.
-async function fetchWithRetry(url, opts, { session, label, maxAttempts = RETRY_MAX_ATTEMPTS }) {
+// onAttempt(nextAttemptNumber, maxAttempts, backoffMs) — 다음 시도 직전(백오프 진입 시)
+// 1회 호출. UI에서 "재시도 n/5" 표시 용도.
+async function fetchWithRetry(url, opts, {
+  session,
+  label,
+  maxAttempts = RETRY_MAX_ATTEMPTS,
+  capMs = RETRY_CAP_MS,
+  onAttempt,
+}) {
   const signal = session.abortController.signal;
   let attempt = 0;
   let lastErr = null;
@@ -180,7 +198,8 @@ async function fetchWithRetry(url, opts, { session, label, maxAttempts = RETRY_M
     }
     attempt++;
     if (attempt < maxAttempts) {
-      const backoff = Math.min(RETRY_BASE_MS * 2 ** (attempt - 1), RETRY_CAP_MS);
+      const backoff = Math.min(RETRY_BASE_MS * 2 ** (attempt - 1), capMs);
+      onAttempt?.(attempt + 1, maxAttempts, backoff);
       await waitWithSignals(backoff, signal);
     }
   }
@@ -542,12 +561,24 @@ function retryFinalization() {
   if (!session || session.phase !== 'failed') return;
   session.phase = 'awaiting';
   session.finalizationError = null;
+  session.finalizeAttempt = null;
   renderPipelineStatus(session);
   coordinatorCheck(session);
 }
 
+// summarize 단계 onAttempt — 재시도 상태를 session에 기록해 UI가 "재시도 n/5" 표시.
+// 성공하거나 다른 단계로 넘어가면 호출자가 finalizeAttempt를 null로 리셋.
+function onSummarizeAttempt(session) {
+  return (next, max, backoffMs) => {
+    if (session !== currentSession) return;
+    session.finalizeAttempt = { next, max, backoffMs };
+    renderPipelineStatus(session);
+  };
+}
+
 async function runFinalization(session) {
   session.phase = 'merging';
+  session.finalizeAttempt = null;
   renderPipelineStatus(session);
   await fetchWithRetry('/api/process-meeting', {
     method: 'POST',
@@ -557,6 +588,7 @@ async function runFinalization(session) {
   if (session !== currentSession) return;
 
   session.phase = 'summarizing';
+  session.finalizeAttempt = null;
   renderPipelineStatus(session);
   await fetchWithRetry('/api/process-meeting', {
     method: 'POST',
@@ -567,10 +599,17 @@ async function runFinalization(session) {
       meetingType: els.meetingType.value || null,
       durationSec: session.durationSec,
     }),
-  }, { session, label: '요약' });
+  }, {
+    session,
+    label: '요약',
+    maxAttempts: SUMMARIZE_RETRY_ATTEMPTS,
+    capMs: SUMMARIZE_RETRY_CAP_MS,
+    onAttempt: onSummarizeAttempt(session),
+  });
   if (session !== currentSession) return;
 
   session.phase = 'finalizing';
+  session.finalizeAttempt = null;
   renderPipelineStatus(session);
   const res = await fetchWithRetry('/api/process-meeting', {
     method: 'POST',
@@ -581,6 +620,7 @@ async function runFinalization(session) {
 
   const data = await res.json();
   session.phase = 'done';
+  session.finalizeAttempt = null;
   showResult(data);
 }
 
@@ -669,8 +709,10 @@ function segmentStatusText(p) {
 }
 
 function phaseText(session, items) {
+  const a = session.finalizeAttempt;
+  const retrySuffix = a ? ` (AI 과부하로 재시도 ${a.next}/${a.max})` : '';
   if (session.phase === 'merging') return '전사문 병합 중...';
-  if (session.phase === 'summarizing') return '회의록 요약 중...';
+  if (session.phase === 'summarizing') return `회의록 요약 중...${retrySuffix}`;
   if (session.phase === 'finalizing') return 'Notion에 저장 중...';
   if (session.phase === 'failed') {
     const msg = session.finalizationError?.message || '오류';
