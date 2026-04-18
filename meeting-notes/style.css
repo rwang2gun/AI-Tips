@@ -406,3 +406,48 @@ body{
 }
 
 .hidden{display:none !important}
+
+/* AUTH GATE — 로컬 스토리지에 액세스 토큰 없을 때 표시 */
+.auth-gate{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:14px;
+  padding:40px 20px;
+  text-align:center;
+}
+.auth-icon{font-size:44px}
+.auth-title{
+  font-size:18px;
+  font-weight:700;
+  color:var(--text);
+}
+.auth-desc{
+  font-size:13px;
+  color:var(--text-muted);
+  max-width:320px;
+}
+.auth-input{
+  width:100%;
+  max-width:320px;
+  padding:12px 14px;
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:10px;
+  color:var(--text);
+  font-family:inherit;
+  font-size:14px;
+  user-select:text;
+  -webkit-user-select:text;
+}
+.auth-input:focus{
+  outline:none;
+  border-color:var(--accent);
+}
+.auth-error{
+  font-size:12px;
+  color:var(--rec);
+  margin-top:4px;
+}

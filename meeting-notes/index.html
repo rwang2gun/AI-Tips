@@ -22,6 +22,24 @@
       <a href="../" class="back-link">← AI Tips</a>
     </header>
 
+    <section class="auth-gate hidden" id="authGate">
+      <div class="auth-icon">🔒</div>
+      <h2 class="auth-title">접근 토큰 필요</h2>
+      <p class="auth-desc">앱 소유자로부터 받은 액세스 토큰을 입력하세요.</p>
+      <input
+        type="password"
+        id="authTokenInput"
+        class="auth-input"
+        placeholder="access token"
+        autocomplete="off"
+        autocorrect="off"
+        autocapitalize="off"
+        spellcheck="false"
+      >
+      <button class="ghost-btn" id="authSubmitBtn" type="button">확인</button>
+      <div class="auth-error hidden" id="authError"></div>
+    </section>
+
     <section class="recorder" id="recorder">
       <div class="status" id="status">대기 중</div>
       <div class="timer" id="timer">00:00</div>
