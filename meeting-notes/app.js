@@ -50,7 +50,21 @@ const els = {
   meetingTitle: document.getElementById('meetingTitle'),
   meetingType: document.getElementById('meetingType'),
   viz: document.getElementById('viz'),
+  authGate: document.getElementById('authGate'),
+  authTokenInput: document.getElementById('authTokenInput'),
+  authSubmitBtn: document.getElementById('authSubmitBtn'),
+  authError: document.getElementById('authError'),
 };
+
+// ===== 접근 게이트 (외부 무단 사용 차단) =====
+// Vercel Free 플랜은 Standard Protection이 preview만 덮고 production은 공개 —
+// Gemini/Notion 토큰이 외부 녹음에 소진되는 위험을 앱 단에서 차단.
+// 토큰은 localStorage에 저장, 모든 API 호출에 x-app-token 헤더로 전송.
+// 서버는 process.env.APP_ACCESS_TOKEN과 일치하지 않으면 401 반환.
+const ACCESS_TOKEN_KEY = 'meetingNotes.accessToken';
+function getAccessToken() { return localStorage.getItem(ACCESS_TOKEN_KEY) || ''; }
+function setAccessToken(token) { localStorage.setItem(ACCESS_TOKEN_KEY, token); }
+function clearAccessToken() { localStorage.removeItem(ACCESS_TOKEN_KEY); }
 
 // 녹음 상태 머신.
 //   idle: 대기 — recBtn("녹음 시작")만 노출
@@ -177,6 +191,11 @@ async function fetchWithRetry(url, opts, {
   onAttempt,
 }) {
   const signal = session.abortController.signal;
+  // 모든 API 호출에 액세스 토큰 헤더 주입. 서버는 일치 시에만 통과.
+  const accessToken = getAccessToken();
+  const mergedHeaders = { ...(opts.headers || {}) };
+  if (accessToken) mergedHeaders['x-app-token'] = accessToken;
+  const reqOpts = { ...opts, headers: mergedHeaders };
   let attempt = 0;
   let lastErr = null;
   while (attempt < maxAttempts) {
@@ -184,8 +203,17 @@ async function fetchWithRetry(url, opts, {
       throw new DOMException('session stale', 'AbortError');
     }
     try {
-      const res = await fetch(url, { ...opts, signal });
+      const res = await fetch(url, { ...reqOpts, signal });
       if (res.ok) return res;
+      // 401은 토큰 불일치 — 즉시 게이트로 돌려보냄. 재시도/다른 핸들러 무의미.
+      if (res.status === 401) {
+        clearAccessToken();
+        // 진행 중 세션은 abort하고 reload로 모든 상태 리셋.
+        session.abortController.abort();
+        currentSession = null;
+        location.reload();
+        throw new Error('Unauthorized — access token cleared, reloading');
+      }
       if (res.status >= 500 && res.status < 600) {
         lastErr = new Error(`${label}: ${res.status} ${await res.text().catch(() => '')}`);
       } else {
@@ -829,6 +857,49 @@ els.stopBtn.addEventListener('click', () => {
 
 els.newBtn.addEventListener('click', reset);
 els.retryBtn.addEventListener('click', reset);
+
+// ===== 접근 게이트 UI =====
+function showAuthGate(errorMsg) {
+  // 기존 섹션 전부 숨기고 게이트만 노출.
+  ['recorder', 'processing', 'result', 'error'].forEach((id) => {
+    els[id].classList.add('hidden');
+  });
+  els.authGate.classList.remove('hidden');
+  if (errorMsg) {
+    els.authError.textContent = errorMsg;
+    els.authError.classList.remove('hidden');
+  } else {
+    els.authError.classList.add('hidden');
+  }
+  els.authTokenInput.value = '';
+  // 포커스는 한 박자 뒤에 — 모바일에서 키보드 즉시 팝업 방지 목적으로 지연
+  setTimeout(() => els.authTokenInput.focus(), 100);
+}
+
+function submitAuthToken() {
+  const token = els.authTokenInput.value.trim();
+  if (!token) {
+    els.authError.textContent = '토큰을 입력하세요';
+    els.authError.classList.remove('hidden');
+    return;
+  }
+  setAccessToken(token);
+  els.authGate.classList.add('hidden');
+  els.authError.classList.add('hidden');
+  // 서버 검증은 첫 API 호출(녹음 종료 시점)에 자연스럽게 이루어짐.
+  // 여기서 별도 검증 엔드포인트 두면 검증 단계에서도 토큰 노출되는데 DRY 이득이 없음.
+  showSection('recorder');
+}
+
+els.authSubmitBtn.addEventListener('click', submitAuthToken);
+els.authTokenInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') submitAuthToken();
+});
+
+// 페이지 로드 시 토큰 체크 — 없으면 다른 UI 숨기고 게이트 노출.
+if (!getAccessToken()) {
+  showAuthGate();
+}
 
 // 미완료 파이프라인 있을 때 탭 닫기/새로고침 경고.
 window.addEventListener('beforeunload', (e) => {

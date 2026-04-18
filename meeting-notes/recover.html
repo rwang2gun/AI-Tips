@@ -163,6 +163,38 @@
   </main>
 
   <script>
+    // 앱 접근 토큰 — index.html과 공유되는 localStorage 키. 없으면 prompt로 받아 저장.
+    // recover는 개발자/복구용 CLI UI라 간단한 prompt로 충분.
+    const ACCESS_TOKEN_KEY = 'meetingNotes.accessToken';
+    function getAccessToken() { return localStorage.getItem(ACCESS_TOKEN_KEY) || ''; }
+
+    // 모든 /api/ 호출에 x-app-token 헤더 주입하도록 window.fetch 래핑.
+    const _origFetch = window.fetch.bind(window);
+    window.fetch = (url, opts = {}) => {
+      if (typeof url === 'string' && url.startsWith('/api/')) {
+        const token = getAccessToken();
+        opts.headers = { ...(opts.headers || {}), 'x-app-token': token };
+      }
+      return _origFetch(url, opts).then((res) => {
+        if (res.status === 401) {
+          localStorage.removeItem(ACCESS_TOKEN_KEY);
+          alert('액세스 토큰이 유효하지 않습니다. 새로 입력하세요.');
+          const next = prompt('액세스 토큰:');
+          if (next) {
+            localStorage.setItem(ACCESS_TOKEN_KEY, next);
+            location.reload();
+          }
+        }
+        return res;
+      });
+    };
+
+    // 첫 진입 시 토큰 없으면 prompt로 받음.
+    if (!getAccessToken()) {
+      const t = prompt('액세스 토큰:');
+      if (t) localStorage.setItem(ACCESS_TOKEN_KEY, t);
+    }
+
     const els = {
       form: document.getElementById('form'),
       sessionId: document.getElementById('sessionId'),

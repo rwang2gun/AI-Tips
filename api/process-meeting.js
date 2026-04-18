@@ -104,6 +104,19 @@ export default async function handler(req, res) {
     return jsonResponse(res, 405, { error: 'Method not allowed' });
   }
 
+  // 앱 접근 게이트. APP_ACCESS_TOKEN 환경변수가 설정되어 있으면 x-app-token
+  // 헤더로 매치 검증. 환경변수가 없으면 게이트 비활성(로컬 개발 편의 + 기존 배포
+  // 호환성). Vercel Free 플랜은 Standard Protection이 preview만 덮고 production은
+  // 공개 상태라 앱 단에서 차단 필요 — 2026-04-18 외부 유입 3건(법률 상담, 공공회의
+  // 등)으로 Gemini/Notion 토큰 유출 + 개인정보 저장 사건 이후 도입.
+  const expectedToken = process.env.APP_ACCESS_TOKEN;
+  if (expectedToken) {
+    const provided = req.headers['x-app-token'];
+    if (provided !== expectedToken) {
+      return jsonResponse(res, 401, { error: 'Unauthorized' });
+    }
+  }
+
   const action = req.headers['x-action'];
   const handle = handlers[action];
   if (!handle) {
