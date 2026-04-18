@@ -89,7 +89,11 @@
     <section class="processing hidden" id="processing">
       <div class="spinner"></div>
       <div class="processing-text" id="processingText">처리 중...</div>
-      <ul class="segment-list" id="segmentList"></ul>
+      <label class="hide-done-toggle hidden" id="hideDoneToggle">
+        <input type="checkbox" id="hideDoneChk" checked>
+        <span id="hideDoneLabel">완료 항목 숨기기</span>
+      </label>
+      <ul class="segment-list hide-done" id="segmentList"></ul>
       <div class="processing-sub">전사 → 요약 → Notion 저장</div>
     </section>
 

@@ -49,9 +49,11 @@ export default async function handleSummarize(req, res) {
     guideText,
   });
 
+  // Pro: 긴 transcript + responseSchema 조합에서 Flash는 503 지속 반환 (WORK-LOG 교훈 #3).
+  // PR #10은 로컬만 Pro로 전환했고 서버엔 미적용이었음 — 2026-04-18 실전 503으로 재확인.
   const result = await withRetry(() =>
     genAI.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-pro',
       contents: [createUserContent([promptText])],
       config: {
         responseMimeType: 'application/json',
@@ -62,7 +64,7 @@ export default async function handleSummarize(req, res) {
 
   const meetingData = JSON.parse(result.text);
 
-  // 1차 topic이 50자 초과면 Pro로 한 번 더 압축. 입력이 작아 빠르고 503 위험 적음.
+  // topic이 50자 초과면 한 번 더 짧게 압축. 입력이 작아 빠르고 503 위험 적음.
   // 실패 시 1차 topic 유지 (요약 자체는 이미 성공).
   if (meetingData.topic && meetingData.topic.length > 50) {
     try {
@@ -88,7 +90,7 @@ export default async function handleSummarize(req, res) {
   });
 }
 
-// 1차 요약(Flash) 결과의 topic이 50자 초과일 때 Pro로 한 번 더 짧게 압축.
+// 1차 요약 topic이 50자 초과일 때 한 번 더 짧게 압축.
 // 입력은 title + 1차 topic + agenda 제목들로 매우 작아서 빠르게 끝남.
 async function refineTopic(genAI, meetingData) {
   const prompt = buildRefineTopicPrompt({ meetingData });

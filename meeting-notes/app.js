@@ -40,6 +40,9 @@ const els = {
   processing: document.getElementById('processing'),
   processingText: document.getElementById('processingText'),
   segmentList: document.getElementById('segmentList'),
+  hideDoneToggle: document.getElementById('hideDoneToggle'),
+  hideDoneChk: document.getElementById('hideDoneChk'),
+  hideDoneLabel: document.getElementById('hideDoneLabel'),
   result: document.getElementById('result'),
   resultLink: document.getElementById('resultLink'),
   resultTitle: document.getElementById('resultTitle'),
@@ -702,6 +705,13 @@ function renderPipelineStatus(session) {
     els.segmentList.appendChild(li);
   }
 
+  // 완료 항목 숨기기 토글 — done 1개 이상일 때만 노출, 라벨에 개수 표시
+  const doneCount = items.reduce((n, p) => n + (p.status === 'done' ? 1 : 0), 0);
+  if (els.hideDoneToggle) {
+    els.hideDoneToggle.classList.toggle('hidden', doneCount === 0);
+    if (doneCount > 0) els.hideDoneLabel.textContent = `완료 ${doneCount}개 숨기기`;
+  }
+
   // 상단 단일 상태 라인
   els.processingText.textContent = phaseText(session, items);
   renderFinalizeRetry(session);
@@ -827,6 +837,7 @@ function reset() {
   els.meetingType.value = '';
   els.timer.textContent = '00:00';
   if (els.segmentList) els.segmentList.innerHTML = '';
+  if (els.hideDoneToggle) els.hideDoneToggle.classList.add('hidden');
   const finalizeBtn = document.getElementById('finalizeRetryBtn');
   if (finalizeBtn) finalizeBtn.remove();
   els.processingText.textContent = '처리 중...';
@@ -857,6 +868,10 @@ els.stopBtn.addEventListener('click', () => {
 
 els.newBtn.addEventListener('click', reset);
 els.retryBtn.addEventListener('click', reset);
+
+els.hideDoneChk.addEventListener('change', () => {
+  els.segmentList.classList.toggle('hide-done', els.hideDoneChk.checked);
+});
 
 // ===== 접근 게이트 UI =====
 function showAuthGate(errorMsg) {

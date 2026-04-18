@@ -265,6 +265,22 @@ body{
   color:var(--text-muted);
 }
 
+.hide-done-toggle{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  max-width:360px;
+  width:100%;
+  font-size:12px;
+  color:var(--text-muted);
+  cursor:pointer;
+  user-select:none;
+}
+.hide-done-toggle input{
+  margin:0;
+  cursor:pointer;
+  accent-color:var(--success);
+}
 .segment-list{
   list-style:none;
   width:100%;
@@ -274,6 +290,7 @@ body{
   gap:6px;
   margin:4px 0;
 }
+.segment-list.hide-done .seg-item.done{display:none}
 .seg-item{
   display:flex;
   align-items:center;
