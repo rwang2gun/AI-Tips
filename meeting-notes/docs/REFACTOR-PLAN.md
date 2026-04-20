@@ -32,7 +32,7 @@
 ### 의도적 차이 (별도 유지)
 - **Gemini 클라이언트**: serverless는 per-request 생성, 로컬은 전역 싱글톤
 - **오디오 소스**: serverless는 Vercel Blob, 로컬은 fs
-- **유의어 사전**: 로컬만 사용 (API는 용어집으로 충분)
+- ~~**유의어 사전**: 로컬만 사용 (API는 용어집으로 충분)~~ — **2026-04-20 서버 전사·요약에도 반영** (드리프트 해소)
 - **세그먼트 병합**: API만 필요 (클라이언트가 5분 단위 분할)
 - **타임아웃**: 로컬 undici 무제한, API 60초 제약
 
@@ -68,7 +68,7 @@ lib/                           # NEW — api/scripts 공유
 │   ├── transcribe.js          # 전사 프롬프트 빌더 (segment/legacy/local 변형)
 │   └── summarize.js           # summarize 프롬프트 빌더
 ├── glossary.js                # fetchGlossary
-├── synonyms.js                # fetchSynonyms + 힌트 빌더 (로컬 전용 import)
+├── synonyms.js                # fetchSynonyms + 힌트 빌더 (서버·로컬 공용)
 ├── guide.js                   # fetchGuide (Notion 작성 가이드)
 ├── notion/
 │   ├── page-builder.js        # buildBlocks (API/로컬 모두 지원)

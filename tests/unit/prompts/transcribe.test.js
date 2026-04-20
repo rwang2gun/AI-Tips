@@ -26,6 +26,12 @@ test('buildSegmentTranscribePrompt: totalSegments 없으면 "한 구간" 문구'
   assert.doesNotMatch(prompt, /번째 5분 구간/);
 });
 
+test('buildSegmentTranscribePrompt: synonymHint 주입되면 말미에 붙음', () => {
+  const hint = '\n\n[고유 용어]\n소울류, 카잔';
+  const prompt = buildSegmentTranscribePrompt({ segmentIndex: 0, totalSegments: 3, synonymHint: hint });
+  assert.ok(prompt.endsWith(hint), 'synonymHint가 프롬프트 끝에 붙어야 함');
+});
+
 test('buildLocalTranscribePrompt: 기본은 synonymHint 없음', () => {
   const prompt = buildLocalTranscribePrompt();
   assert.match(prompt, /한 문장이 끝날 때마다 반드시 줄바꿈/);

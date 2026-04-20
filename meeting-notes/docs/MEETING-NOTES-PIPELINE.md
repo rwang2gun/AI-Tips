@@ -90,13 +90,16 @@ meeting-notes/                api/process-meeting.js           Gemini API
 | 항목 | 내용 |
 |------|------|
 | 입력 | `{ sessionId, segmentIndex, fileUri, fileMimeType, totalSegments }` |
-| 처리 | Gemini 2.5 Flash로 한국어 전사 (`thinkingBudget: 0`, `maxOutputTokens: 65536`, `withRetry`) |
-| 출력 | `meetings/<sid>/transcript-NN.txt` (UTF-8 plain text) |
-| 기대 시간 | 5분 오디오당 15~30초 |
+| Notion 참조 | 유의어 사전 (`NOTION_SYNONYM_DB_ID`) — `buildTranscribeSynonymHint`로 "정답 용어"만 프롬프트 말미에 주입 (프라이밍 역효과 회피) |
+| 처리 | Gemini 2.5 Flash로 한국어 전사 (`thinkingBudget: 0`, `maxOutputTokens: 65536`, `withRetry`) → `applySynonymReplacements`로 "무조건 치환" regex 후처리 |
+| 출력 | `meetings/<sid>/transcript-NN.txt` (UTF-8 plain text, regex 치환 반영본) |
+| 기대 시간 | 5분 오디오당 15~30초 (+ 유의어 조회 200~500ms) |
 | 실패 모드 | 빈 응답 (`MAX_TOKENS` w/ thinking 잔존) / 503 지속 / 일부 segment generation loop |
-| Fallback | 503은 withRetry, 그 외는 throw |
+| Fallback | 503은 withRetry, 그 외는 throw. `NOTION_SYNONYM_DB_ID` 미설정 시 힌트·치환 둘 다 skip (하위호환) |
 
 > **모델 선택 이유**: PR #8 — Flash thinking을 끄지 않으면 출력 토큰을 thinking이 다 먹어 빈 응답 반환됨. 단순 전사라 `thinkingBudget: 0` 필수.
+>
+> **유의어 주입 이력**: PR #12 설계대로 서버에 반영된 시점은 2026-04-20 (그 전까지는 로컬 스크립트에만 구현돼 있던 드리프트).
 
 ---
 
@@ -118,11 +121,16 @@ meeting-notes/                api/process-meeting.js           Gemini API
 | 항목 | 내용 |
 |------|------|
 | 입력 | `{ sessionId, title, meetingType, durationSec }` |
-| 처리 | transcript.txt + 용어집(Notion) 합쳐 Flash로 구조화 JSON 추출 (`responseSchema`, `withRetry`) |
-| 출력 | `meetings/<sid>/result.json` = `{ meetingData, date }` |
-| 기대 시간 | 10~30초 (전사문 길이 비례) |
-| 실패 모드 | Flash가 긴 입력+structured output 조합에서 503 지속 |
+| Notion 참조 | 회의록 작성 가이드(`NOTION_GUIDE_PAGE_ID`) · 용어집(`NOTION_GLOSSARY_DB_ID`) · 유의어 사전(`NOTION_SYNONYM_DB_ID`) 세 개 모두 프롬프트에 주입 |
+| 처리 | transcript.txt + 위 Notion 참조 병합 → Gemini 2.5 Pro로 구조화 JSON 추출 (`responseSchema`, `withRetry`) |
+| 출력 | `meetings/<sid>/result.json` = `{ meetingData, date, model }` |
+| 기대 시간 | 10~30초 (전사문 길이 비례) + 각 Notion 조회 200~500ms |
+| 실패 모드 | 503 지속 (Pro도 드물게 발생) / 스키마 위반 응답 |
 | Fallback | withRetry — 추가 fallback은 없음 (지속 실패 시 로컬 재처리 권장) |
+
+> **모델 전환**: PR #10에서 로컬은 Pro, 서버는 Flash로 남아 있던 드리프트가 2026-04-18 ac8c70e에서 서버도 Pro로 통일.
+>
+> **유의어 주입 이력**: 서버 요약은 2026-04-20까지 `synonymHint` 미주입(드리프트). 해당 날짜에 `buildSummarizeSynonymHint`로 오인식→정답 매핑 + 맥락 메모 주입 경로 추가.
 
 > **schema**: `discussion.points / decisions / todos`는 `{ text, sourceQuote }` 객체 배열. `sourceQuote`는 전사문 10~80자 인용 또는 빈 문자열(환각 시그널).
 
@@ -232,6 +240,6 @@ Notion 페이지 하단 `🔍 검토 자료` 토글 안에:
 | `NOTION_TOKEN` | Notion Integration 토큰 | ✅ |
 | `NOTION_DATABASE_ID` | 자동 회의록 DB ID | ✅ |
 | `NOTION_GLOSSARY_DB_ID` | 용어집 DB ID | ⚪ (없으면 용어집 없이 요약) |
-| `NOTION_SYNONYM_DB_ID` | 유의어 DB ID (로컬 스크립트만) | ⚪ |
+| `NOTION_SYNONYM_DB_ID` | 유의어 DB ID (서버 전사·요약 + 로컬 공통) | ⚪ |
 | `NOTION_GUIDE_PAGE_ID` | 회의록 작성 가이드 페이지 (로컬 스크립트만) | ⚪ |
 | `BLOB_READ_WRITE_TOKEN` | Vercel Blob (배포 시 자동) | ✅ |

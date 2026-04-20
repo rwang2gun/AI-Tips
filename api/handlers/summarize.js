@@ -3,6 +3,7 @@ import { meetingSchema } from '../../lib/schemas/meeting.js';
 import { buildSummarizePrompt, buildRefineTopicPrompt } from '../../lib/prompts/summarize.js';
 import { fetchGlossary } from '../../lib/glossary.js';
 import { fetchGuide } from '../../lib/guide.js';
+import { fetchSynonyms, buildSummarizeSynonymHint } from '../../lib/synonyms.js';
 import { createGeminiClient } from '../../lib/clients/gemini.js';
 import { putPublic, fetchBlobText } from '../../lib/clients/blob.js';
 import { readJsonBody, jsonResponse } from '../../lib/http/body-parser.js';
@@ -26,12 +27,14 @@ export default async function handleSummarize(req, res) {
     return jsonResponse(res, 400, { error: 'Empty transcript' });
   }
 
-  // Notion 용어집 + 작성 가이드 조회 (가이드 없으면 빈 문자열로 프롬프트에서 생략됨)
-  // header는 기존 api 프롬프트에 사용되던 문구 그대로 유지.
+  // Notion 용어집 + 작성 가이드 + 유의어 사전 조회 (각 미설정 시 빈 문자열로 프롬프트에서 생략됨).
+  // PR #12 설계: 요약 단계에서 오인식→정답 매핑을 Gemini가 맥락 기반으로 복구하도록 유의어 전체 매핑 주입.
   const glossaryText = await fetchGlossary({
     header: '[용어집 — 아래 용어가 음성에서 들리면 정확한 표기를 사용하세요]',
   });
   const guideText = await fetchGuide();
+  const synonyms = await fetchSynonyms();
+  const synonymHint = buildSummarizeSynonymHint(synonyms);
 
   const genAI = createGeminiClient();
   const today = new Date().toISOString().slice(0, 10);
@@ -47,6 +50,7 @@ export default async function handleSummarize(req, res) {
     transcript,
     glossaryText,
     guideText,
+    synonymHint,
   });
 
   // Pro: 긴 transcript + responseSchema 조합에서 Flash는 503 지속 반환 (WORK-LOG 교훈 #3).

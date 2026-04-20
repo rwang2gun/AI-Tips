@@ -4,6 +4,8 @@ import { createGeminiClient } from '../../lib/clients/gemini.js';
 import { putPublic } from '../../lib/clients/blob.js';
 import { readJsonBody, jsonResponse } from '../../lib/http/body-parser.js';
 import { withRetry } from '../../lib/http/retry.js';
+import { fetchSynonyms, buildTranscribeSynonymHint } from '../../lib/synonyms.js';
+import { applySynonymReplacements } from '../../lib/transcript/post-process.js';
 
 // segment 단계 2: 한 세그먼트 전사 → transcript-NN.txt
 export default async function handleTranscribeSegment(req, res) {
@@ -20,7 +22,12 @@ export default async function handleTranscribeSegment(req, res) {
     return jsonResponse(res, 400, { error: 'Missing fileUri/fileMimeType' });
   }
 
-  const promptText = buildSegmentTranscribePrompt({ segmentIndex, totalSegments });
+  // 유의어 사전 조회 → 전사 프롬프트에 "정답 용어" 힌트 주입 + 후처리 regex 치환.
+  // PR #12 설계: 전사 프롬프트엔 정답 용어만(프라이밍 역효과 회피), 오인식→정답 매핑은 regex/요약에서 처리.
+  const synonyms = await fetchSynonyms();
+  const synonymHint = buildTranscribeSynonymHint(synonyms);
+
+  const promptText = buildSegmentTranscribePrompt({ segmentIndex, totalSegments, synonymHint });
 
   const genAI = createGeminiClient();
   const result = await withRetry(() =>
@@ -40,9 +47,14 @@ export default async function handleTranscribeSegment(req, res) {
     })
   );
 
-  const transcript = result.text || '';
-  if (!transcript.trim()) {
+  const rawTranscript = result.text || '';
+  if (!rawTranscript.trim()) {
     return jsonResponse(res, 500, { error: `Empty transcript for segment ${segmentIndex}` });
+  }
+
+  const { text: transcript, applied } = applySynonymReplacements(rawTranscript, synonyms);
+  if (applied.length) {
+    console.log(`[transcribe-segment ${segmentIndex}] synonym replacements:`, applied);
   }
 
   const key = `meetings/${sessionId}/transcript-${String(segmentIndex).padStart(2, '0')}.txt`;
