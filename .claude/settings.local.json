@@ -35,7 +35,9 @@
       "Bash(git push *)",
       "Bash(node *)",
       "Bash(git reset *)",
-      "Bash(git mv *)"
+      "Bash(git mv *)",
+      "Read(//d/Claude/AI-Tips/**)",
+      "Bash(powershell -Command \"\\(Get-Item meeting-notes-deck.html\\).LastWriteTime\")"
     ]
   }
 }

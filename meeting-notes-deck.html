@@ -191,23 +191,26 @@ p{font-size:0.95em;color:var(--text-muted);line-height:1.65;text-align:center;ma
   font-size:0.72em;color:var(--text);text-align:center;max-width:36em;
 }
 
-/* ===== 9. QUALITY ISSUES ===== */
+/* ===== 9. QUALITY ISSUES / Operation 공용 ===== */
 .quality-grid{
   display:grid;grid-template-columns:1fr 1fr 1fr;gap:1em;
-  margin-top:1.1em;max-width:40em;width:100%;
+  margin-top:1.1em;max-width:46em;width:100%;
 }
 .quality-card{
   padding:1.1em 1em;border-radius:0.7em;
   background:var(--surface);border:1px solid var(--border);
   text-align:center;
+  display:flex;flex-direction:column;
 }
 .quality-card .icon{font-size:2em;margin-bottom:0.3em}
 .quality-card h3{font-size:0.82em;color:var(--rec);margin-bottom:0.35em;font-weight:700}
-.quality-card p{font-size:0.65em;line-height:1.5;text-align:center;max-width:none}
+.quality-card p{font-size:0.65em;line-height:1.5;text-align:center;max-width:none;flex:1}
 .quality-card .ex{
-  margin-top:0.5em;padding:0.4em 0.6em;border-radius:0.3em;
-  background:var(--surface-2);font-family:'JetBrains Mono',monospace;
-  font-size:0.56em;color:var(--text-muted);
+  margin-top:0.7em;padding:0.55em 0.7em;border-radius:0.4em;
+  background:rgba(124,106,239,0.12);border:1px solid rgba(124,106,239,0.28);
+  font-weight:600;font-size:0.68em;color:var(--text);
+  white-space:nowrap;
+  letter-spacing:-0.01em;
 }
 
 /* ===== 10. SAFEGUARDS ===== */
@@ -344,7 +347,8 @@ p{font-size:0.95em;color:var(--text-muted);line-height:1.65;text-align:center;ma
 }
 .learn-icon{font-size:1.3em;flex-shrink:0;line-height:1.2}
 .learn-body strong{display:block;color:var(--accent);font-size:0.82em;margin-bottom:0.15em;font-weight:700}
-.learn-body p{font-size:0.7em;text-align:left;max-width:none;line-height:1.6;color:var(--text-muted)}
+.learn-body p{font-size:0.7em;text-align:left;max-width:none;line-height:1.6;color:var(--text-muted);word-break:keep-all;overflow-wrap:break-word}
+.learn-body p + p{margin-top:0.25em}
 
 /* ===== 14. CLOSING ===== */
 .closing-links{display:flex;gap:0.65em;margin-top:1.3em;flex-wrap:wrap;justify-content:center}
@@ -453,6 +457,74 @@ p{font-size:0.95em;color:var(--text-muted);line-height:1.65;text-align:center;ma
   .nav-jump{max-width:8em}
   .slide{padding:2em 2.5em 3.5em}
 }
+
+/* ===== FEATURE CARDS (Part 1 features) ===== */
+.feature-card{
+  margin-top:0.8em;max-width:42em;width:100%;
+  padding:1.4em 1.7em;border-radius:0.9em;
+  background:var(--surface);border:1px solid var(--border);
+  display:flex;flex-direction:column;gap:1em;
+}
+.feature-lead{display:flex;gap:0.9em;align-items:flex-start}
+.feature-lead .icon{font-size:1.9em;line-height:1;flex-shrink:0}
+.feature-lead p{font-size:0.78em;text-align:left;max-width:none;color:var(--text);line-height:1.6}
+.feature-examples{
+  display:flex;flex-wrap:wrap;gap:0.4em;
+  padding:0.8em 1em;border-radius:0.5em;
+  background:rgba(124,106,239,0.06);border:1px solid rgba(124,106,239,0.18);
+}
+.feature-examples .chip{
+  font-family:'JetBrains Mono',monospace;font-size:0.62em;
+  padding:0.3em 0.7em;border-radius:0.35em;
+  background:var(--surface-2);color:var(--text);font-weight:500;
+}
+.feature-bullets{display:flex;flex-direction:column;gap:0.42em}
+.fb-item{font-size:0.72em;color:var(--text-muted);display:flex;gap:0.55em;align-items:flex-start;line-height:1.55}
+.fb-ok{color:var(--green);font-weight:700;flex-shrink:0}
+.feature-foot{font-size:0.66em;color:var(--text-muted);text-align:center;padding-top:0.4em;border-top:1px dashed var(--border)}
+
+/* Hallucination detection example (Feature 3) */
+.hall-example{display:flex;flex-direction:column;gap:0.5em;margin-top:0.15em}
+.hall-item{
+  padding:0.7em 0.9em;border-radius:0.5em;
+  background:var(--surface-2);
+  display:flex;flex-direction:column;gap:0.25em;
+}
+.hall-item.good{border-left:3px solid var(--green)}
+.hall-item.bad{border-left:3px solid var(--rec)}
+.hall-tag{font-family:'JetBrains Mono',monospace;font-size:0.56em;font-weight:600;letter-spacing:-0.01em}
+.hall-item.good .hall-tag{color:var(--green)}
+.hall-item.bad .hall-tag{color:var(--rec)}
+.hall-summary{font-size:0.72em;color:var(--text);font-weight:500}
+.hall-quote{font-size:0.62em;color:var(--text-muted);font-style:italic;padding-left:0.85em;border-left:1px solid var(--border);line-height:1.5}
+
+/* Part divider hint (end of Part 1) */
+.part-divider{margin-top:0.9em;font-size:0.68em;color:var(--text-dim);letter-spacing:0.04em}
+
+/* ===== SECTION COVER (Part 1/2/3) ===== */
+.section-bignum{
+  position:absolute;top:50%;right:0.1em;
+  transform:translateY(-50%);
+  font-family:'Outfit',sans-serif;font-weight:900;
+  font-size:24em;line-height:0.78;letter-spacing:-0.06em;
+  color:rgba(124,106,239,0.15);
+  z-index:0;pointer-events:none;user-select:none;
+}
+.section-cover > *:not(.section-bignum){position:relative;z-index:2}
+.section-cover .tag{font-size:0.78em;padding:0.45em 1.2em}
+.section-cover h1{font-size:4em;letter-spacing:-0.04em;margin-top:0.3em}
+.section-cover .sub{font-size:1.3em;font-weight:300;margin-top:0.9em;color:var(--text)}
+
+/* Part 색상 — 섹션 커버 배경 + 큰 숫자 */
+.section-cover.part-2 .section-bignum{color:rgba(212,165,116,0.15)}
+.section-cover.part-3 .section-bignum{color:rgba(95,207,128,0.15)}
+
+/* 파트별 tag 색상 통일 (section cover + 해당 파트의 모든 content 슬라이드)
+   !important 로 base .tag 우선순위 문제 완전 차단 */
+.slide.part-1 .tag{background:rgba(124,106,239,0.16) !important;color:var(--accent) !important}
+.slide.part-2 .tag{background:rgba(212,165,116,0.22) !important;color:var(--warm) !important}
+.slide.part-3 .tag{background:rgba(95,207,128,0.22) !important;color:var(--green) !important}
+
 </style>
 </head>
 <body>
@@ -474,20 +546,28 @@ p{font-size:0.95em;color:var(--text-muted);line-height:1.65;text-align:center;ma
       </div>
     </div>
 
-    <!-- ===== 2. PROBLEM ===== -->
+    <!-- ===== PART 1 SECTION COVER ===== -->
+    <div class="slide section-cover part-1" data-index="part1">
+      <div class="section-bignum">01</div>
+      <div class="tag">PART 01</div>
+      <h1>지금의 앱</h1>
+      <div class="sub">파이프라인 · 3가지 차별 기능 · 3중 안전장치</div>
+    </div>
+
+    <!-- ===== 2. WHY ===== -->
     <div class="slide" data-index="1">
       <div class="tag">Why</div>
-      <h2>회의실에서 생기는 문제</h2>
+      <h2>회의록을 남겨야 하는데…</h2>
       <div class="problem-grid">
         <div class="problem-card">
-          <div class="icon">🏢</div>
-          <h3>PC를 안 들고 간다</h3>
-          <p>회의실엔 모바일(안드로이드/아이패드)만 들고 감</p>
+          <div class="icon">🙋</div>
+          <h3>담당자를 지정하면</h3>
+          <p>회의록 담당자가 정작 회의에 참석하기 어렵다</p>
         </div>
         <div class="problem-card">
-          <div class="icon">🧠</div>
-          <h3>기억에 의존한 회의록</h3>
-          <p>자리 돌아와서 기억나는 것만 적음 → 누락 + 시간 낭비</p>
+          <div class="icon">🎤</div>
+          <h3>녹음 후 작성하면</h3>
+          <p>내용 누락이 생기거나 정리에 시간이 낭비된다</p>
         </div>
       </div>
     </div>
@@ -518,193 +598,10 @@ p{font-size:0.95em;color:var(--text-muted);line-height:1.65;text-align:center;ma
       <p style="margin-top:1.3em">모바일에서 녹음 버튼 한 번 → 회의록 완성</p>
     </div>
 
-    <!-- ===== 4. v1 ARCHITECTURE ===== -->
+    <!-- ===== 4. PIPELINE (지금의 동작 파이프라인) ===== -->
     <div class="slide" data-index="3">
-      <div class="tag">v1 · 대화로 설계</div>
-      <h2>처음 만든 구조</h2>
-      <div class="arch-flow">
-        <div class="arch-node">
-          <div class="icon">📱</div>
-          <div class="name">PWA</div>
-          <div class="role">브라우저 녹음<br>앱 설치 가능</div>
-        </div>
-        <div class="arch-arrow">→</div>
-        <div class="arch-node" style="border-color:rgba(124,106,239,0.3)">
-          <div class="icon">▲</div>
-          <div class="name">Vercel</div>
-          <div class="role">서버리스 함수<br>임시 저장소</div>
-        </div>
-        <div class="arch-arrow">→</div>
-        <div class="arch-node" style="border-color:rgba(212,165,116,0.3)">
-          <div class="icon">✨</div>
-          <div class="name">Gemini</div>
-          <div class="role">오디오 전사<br>구조화 요약</div>
-        </div>
-        <div class="arch-arrow">→</div>
-        <div class="arch-node">
-          <div class="icon">📝</div>
-          <div class="name">Notion</div>
-          <div class="role">회의록 DB<br>페이지 생성</div>
-        </div>
-      </div>
-      <div class="cost-tag">💰 전체 비용 실질 0원 — 무료 티어 조합</div>
-      <p style="margin-top:0.9em;font-size:0.72em">"이런 거 만들고 싶어" 한마디 → Claude Code가 구성 요소·기술 스택 옵션을 정리</p>
-    </div>
-
-    <!-- ===== 5. EARLY SUCCESS ===== -->
-    <div class="slide" data-index="4">
-      <div class="tag">Early Success</div>
-      <h2>30분짜리 회의에선 잘 됐다</h2>
-      <div class="early-grid">
-        <div class="early-card">
-          <div class="head">잘 된 것</div>
-          <ul>
-            <li>모바일에서 녹음 버튼 한 번</li>
-            <li>AI가 아젠다/논의/결정 자동 분류</li>
-            <li>Notion DB에 페이지 자동 생성</li>
-            <li>비용 0원</li>
-          </ul>
-        </div>
-        <div class="early-card">
-          <div class="head">검증된 것</div>
-          <ul>
-            <li>30분 내외 회의 정상 동작</li>
-            <li>용어집(프로젝트 전문 용어) 연동</li>
-            <li>Notion 서식에 맞춘 생성</li>
-            <li>PC 열지 않고 핸드폰만으로 완결</li>
-          </ul>
-        </div>
-      </div>
-      <div class="cliffhanger">…하지만 실전은 달랐다.</div>
-    </div>
-
-    <!-- ===== 6. INCIDENT ===== -->
-    <div class="slide" data-index="5">
-      <div class="tag">Incident</div>
-      <h2>70분짜리 실제 회의 — 실패</h2>
-      <div class="incident-box">
-        <div class="err-line">⚠️ FUNCTION_INVOCATION_TIMEOUT</div>
-        <div class="incident-timeline">
-          <div><span class="tm">09:00</span>회의 시작, 녹음 ON</div>
-          <div><span class="tm">10:10</span>녹음 종료, 업로드 성공</div>
-          <div><span class="tm">10:11</span>처리 중… 에러. 회의록 생성 실패</div>
-        </div>
-      </div>
-      <div class="incident-note">녹음 원본은 있지만 회의를 다시 할 순 없음. 어떻게든 복구해야 한다.</div>
-    </div>
-
-    <!-- ===== 7. ROOT CAUSE ===== -->
-    <div class="slide" data-index="6">
-      <div class="tag">Root Cause</div>
-      <h2>왜 긴 회의는 실패했나?</h2>
-      <div class="cause-grid">
-        <div class="cause-card">
-          <div class="icon">⏱️</div>
-          <h3>서버 60초 한도</h3>
-          <p>무료 서버는 한 번에 최대 60초만 돌 수 있음. 그 안에 끝나야 함</p>
-        </div>
-        <div class="cause-card">
-          <div class="icon">🤖</div>
-          <h3>AI 한 번의 호출 시간</h3>
-          <p>70분 오디오를 AI에게 한 번에 주면 응답 자체가 60초를 훌쩍 넘김</p>
-        </div>
-      </div>
-      <p style="margin-top:1em">짧을 땐 몰랐던 벽. <strong style="color:var(--text)">실전에서만 드러나는 문제</strong>였다.</p>
-    </div>
-
-    <!-- ===== 8. JOURNEY ===== -->
-    <div class="slide" data-index="7">
-      <div class="tag">Journey</div>
-      <h2>4번의 시도 끝에</h2>
-      <div class="journey">
-        <div class="jn-item fail">
-          <div class="jn-num">1</div>
-          <div class="jn-content">
-            <div class="jn-ask">"AI에게 시간 구간 나눠서 요청하면?"</div>
-            <div class="jn-result"><span class="tag-res tag-fail">실패</span>Gemini가 오디오 시간 옵션을 조용히 무시. 문서엔 "영상 전용"이라 적혀 있었다 — 가정을 먼저 검증했어야 했다</div>
-          </div>
-        </div>
-        <div class="jn-item partial">
-          <div class="jn-num">2</div>
-          <div class="jn-content">
-            <div class="jn-ask">"AI한테 '깊이 생각하지 말라'고 해야 했다"</div>
-            <div class="jn-result"><span class="tag-res tag-partial">부분 해결</span>최신 AI는 기본적으로 "사고 모드"가 켜져 있어 답변 예산을 다 써버림. 단순 전사엔 꺼야 정상 작동</div>
-          </div>
-        </div>
-        <div class="jn-item partial">
-          <div class="jn-num">3</div>
-          <div class="jn-content">
-            <div class="jn-ask">"모델마다 장단점이 다르다"</div>
-            <div class="jn-result"><span class="tag-res tag-partial">부분 해결</span>Flash(빠르지만 긴 입력에 약함) + Pro(정확하지만 느림) — 단계별로 다른 모델 사용</div>
-          </div>
-        </div>
-        <div class="jn-item ok">
-          <div class="jn-num">4</div>
-          <div class="jn-content">
-            <div class="jn-ask">"결국 녹음 자체를 5분씩 나눴다"</div>
-            <div class="jn-result"><span class="tag-res tag-ok">근본 해결</span>처리 단계에서 쪼개려 애쓰지 말고, 녹음할 때부터 5분 단위로 저장 → 각 조각이 60초 안에 처리됨</div>
-          </div>
-        </div>
-      </div>
-      <div class="journey-note">AI 도구는 <strong>"한 번에 완벽"이 아니라 "반복 수정"</strong>이 기본. 한계도 대화하며 발견한다.</div>
-    </div>
-
-    <!-- ===== 9. QUALITY ISSUES ===== -->
-    <div class="slide" data-index="8">
-      <div class="tag">Quality Issues</div>
-      <h2>동작은 했는데, 품질이 이상했다</h2>
-      <div class="quality-grid">
-        <div class="quality-card">
-          <div class="icon">🔁</div>
-          <h3>같은 말 반복</h3>
-          <p>긴 오디오 전사 시 같은 문장을 70번 반복 출력</p>
-          <div class="ex">"그래서… / 그래서… / 그래서…"</div>
-        </div>
-        <div class="quality-card">
-          <div class="icon">🎯</div>
-          <h3>전문 용어 오인식</h3>
-          <p>게임 용어를 잘못 알아들음</p>
-          <div class="ex">"어그로" → "아그로"</div>
-        </div>
-        <div class="quality-card">
-          <div class="icon">👻</div>
-          <h3>없는 말 지어냄 (환각)</h3>
-          <p>실제 회의에 없던 결정사항이 요약에 등장</p>
-          <div class="ex">"다음 주 출시 결정" (발언 없음)</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ===== 10. SAFEGUARDS ===== -->
-    <div class="slide" data-index="9">
-      <div class="tag">Solutions</div>
-      <h2>3중 안전장치</h2>
-      <div class="safeguard-grid">
-        <div class="safeguard-card">
-          <div class="icon">✂️</div>
-          <h3>5분 분할 녹음</h3>
-          <div class="target">→ 반복 방지</div>
-          <p>짧게 나눠 주면 AI가 반복 루프에 빠지지 않음. 처리 시간도 안정화</p>
-        </div>
-        <div class="safeguard-card">
-          <div class="icon">📖</div>
-          <h3>Notion 용어집 연동</h3>
-          <div class="target">→ 용어 오인식 보정</div>
-          <p>Notion DB에 용어를 등록해두면 AI가 자동으로 정확한 표기 사용. <strong style="color:var(--text)">코드 수정 없이</strong> 추가·편집</p>
-        </div>
-        <div class="safeguard-card hero">
-          <div class="icon">🔍</div>
-          <h3>근거 인용 표시</h3>
-          <div class="target">→ 환각 탐지 가능</div>
-          <p>각 항목마다 "전사문의 이 문장이 근거"를 함께 출력. <strong style="color:var(--rec)">근거가 비어 있으면 환각 의심</strong></p>
-        </div>
-      </div>
-    </div>
-
-    <!-- ===== 11. PIPELINE flowchart ===== -->
-    <div class="slide" data-index="10">
       <div class="tag">How It Works</div>
-      <h2>실제 동작 파이프라인</h2>
+      <h2>지금의 동작 파이프라인</h2>
       <div class="pipeline">
         <div class="pl-main">
           <div class="pl-node recording">
@@ -750,8 +647,7 @@ p{font-size:0.95em;color:var(--text-muted);line-height:1.65;text-align:center;ma
             <div class="ref-arrow-up">↑</div>
             <div class="ref-box">
               <div class="ref-title">📖 Notion 참조</div>
-              <div class="ref-item">용어집</div>
-              <div class="ref-item">유의어</div>
+              <div class="ref-item">유의어 사전</div>
             </div>
           </div>
           <div class="ref-wrap ref-summarize">
@@ -760,7 +656,7 @@ p{font-size:0.95em;color:var(--text-muted);line-height:1.65;text-align:center;ma
               <div class="ref-title">📋 Notion 참조</div>
               <div class="ref-item">회의록 작성 가이드</div>
               <div class="ref-item">용어집</div>
-              <div class="ref-item">유의어</div>
+              <div class="ref-item">유의어 사전</div>
             </div>
           </div>
         </div>
@@ -771,69 +667,348 @@ p{font-size:0.95em;color:var(--text-muted);line-height:1.65;text-align:center;ma
       </div>
     </div>
 
-    <!-- ===== 12. DIFFERENTIATOR ===== -->
-    <div class="slide" data-index="11">
-      <div class="tag">Differentiator</div>
-      <h2>다른 회의록 앱과 뭐가 다른가</h2>
-      <div class="diff-grid">
-        <div class="diff-card">
+    <!-- ===== 5. FEATURE 1 — 용어집 ===== -->
+    <div class="slide" data-index="4">
+      <div class="tag">Feature 1</div>
+      <h2>용어집을 Notion DB로 관리</h2>
+      <div class="feature-card">
+        <div class="feature-lead">
+          <div class="icon">📖</div>
+          <p>AI가 잘 모를 수 있는 <strong>전문 용어를 Notion에 등록</strong> → 전사·요약 시 자동 반영. 코드 배포 없이 실시간 편집.</p>
+        </div>
+        <div class="feature-examples">
+          <span class="chip">소울류</span>
+          <span class="chip">카잔</span>
+          <span class="chip">브라운 더스트</span>
+          <span class="chip">메탑</span>
+          <span class="chip">리세마라</span>
+          <span class="chip">…</span>
+        </div>
+        <div class="feature-foot">현재 <strong>게임 관련 용어 18개 등록</strong> · 테스트 영상 전사 빈도 분석으로 초기 시드 구축</div>
+      </div>
+    </div>
+
+    <!-- ===== 6. FEATURE 2 — 작성 가이드 ===== -->
+    <div class="slide" data-index="5">
+      <div class="tag">Feature 2</div>
+      <h2>회의록 스타일도 Notion에서 관리</h2>
+      <div class="feature-card">
+        <div class="feature-lead">
+          <div class="icon">📋</div>
+          <p>회의록 양식·톤·분류 규칙을 <strong>Notion 페이지로 작성</strong> → AI가 페이지를 읽고 프롬프트에 자동 반영.</p>
+        </div>
+        <div class="feature-bullets">
+          <div class="fb-item"><span class="fb-ok">✓</span>"논의사항" / "결정사항" 분류 규칙</div>
+          <div class="fb-item"><span class="fb-ok">✓</span>주제 50자 이내 · 아젠다 나열 금지 같은 제약</div>
+          <div class="fb-item"><span class="fb-ok">✓</span>이슈 발견 시 문구 조정 → 다음 회의부터 반영</div>
+        </div>
+        <div class="feature-foot">코드 수정·배포 없이 <strong>Notion 페이지만 고치면 반영</strong></div>
+      </div>
+    </div>
+
+    <!-- ===== 7. FEATURE 3 — 환각 탐지 ===== -->
+    <div class="slide" data-index="6">
+      <div class="tag">Feature 3</div>
+      <h2>AI 스스로 "근거 없음"을 표시</h2>
+      <div class="feature-card">
+        <div class="feature-lead">
+          <div class="icon">🔍</div>
+          <p>요약의 각 항목에 <strong>"근거가 된 전사 문장"</strong>을 함께 출력. 검수자는 의심 항목만 확인하면 됨.</p>
+        </div>
+        <div class="hall-example">
+          <div class="hall-item good">
+            <span class="hall-tag">✓ 근거 있음</span>
+            <div class="hall-summary">"다음 달까지 기획안 초안 공유"</div>
+            <div class="hall-quote">"초안은 다음 달까지 공유하기로 하죠"</div>
+          </div>
+          <div class="hall-item bad">
+            <span class="hall-tag">⚠ 근거 비어있음 → 환각 의심</span>
+            <div class="hall-summary">"다음 주 출시 결정"</div>
+            <div class="hall-quote">(전사문에 해당 발언 없음)</div>
+          </div>
+        </div>
+        <div class="feature-foot">전사 원문도 Notion에 파일로 첨부 → <strong>사후 검증 가능</strong></div>
+      </div>
+    </div>
+
+    <!-- ===== 8. SAFEGUARDS SUMMARY ===== -->
+    <div class="slide" data-index="7">
+      <div class="tag">Summary</div>
+      <h2>품질을 지키는 3중 안전장치</h2>
+      <div class="safeguard-grid">
+        <div class="safeguard-card">
           <div class="icon">📖</div>
           <h3>용어집 Notion 연동</h3>
-          <p>프로젝트 전문 용어를 Notion DB로 관리. 체크박스로 ON/OFF</p>
-          <div class="foot">현재 18개 게임 용어 등록</div>
+          <div class="target">→ 전문 용어 오인식 방지</div>
+          <p>AI가 모르는 용어를 Notion에서 관리. <strong style="color:var(--text)">코드 배포 없이</strong> 실시간 튜닝</p>
         </div>
-        <div class="diff-card">
+        <div class="safeguard-card">
           <div class="icon">📋</div>
-          <h3>작성 가이드 Notion 연동</h3>
-          <p>회의록 스타일 규칙도 Notion 페이지에서 관리. 코드 배포 없이 튜닝</p>
-          <div class="foot">AI가 페이지를 읽고 프롬프트에 반영</div>
+          <h3>작성 가이드 연동</h3>
+          <div class="target">→ 회의록 스타일 통일</div>
+          <p>양식·톤·분류 규칙을 Notion으로 관리. AI가 읽어 프롬프트에 반영</p>
         </div>
-        <div class="diff-card">
+        <div class="safeguard-card">
           <div class="icon">🔍</div>
-          <h3>환각 탐지 표시</h3>
-          <p>AI 스스로 "근거 없음" 항목을 표시. 검수자가 의심 항목만 확인</p>
-          <div class="foot">전사 원문도 Notion에 함께 첨부</div>
+          <h3>근거 인용 표시</h3>
+          <div class="target">→ 환각 탐지</div>
+          <p>각 항목에 "전사문 근거"를 함께 출력. <strong style="color:var(--rec)">근거 비면 환각 의심</strong></p>
+        </div>
+      </div>
+      <div class="part-divider">다음은 여기까지 오는 여정 →</div>
+    </div>
+
+    <!-- ===== PART 2 SECTION COVER ===== -->
+    <div class="slide section-cover part-2" data-index="part2">
+      <div class="section-bignum">02</div>
+      <div class="tag">PART 02</div>
+      <h1>만들며 겪은 일</h1>
+      <div class="sub">첫 실패부터 낯선 사람의 유입까지</div>
+    </div>
+
+    <!-- ===== 9. FLASHBACK ===== -->
+    <div class="slide" data-index="8">
+      <div class="tag">Flashback</div>
+      <h2>1분짜리 자체 테스트에선 잘 됐다</h2>
+      <div class="early-grid">
+        <div class="early-card">
+          <div class="head">잘 된 것</div>
+          <ul>
+            <li>모바일에서 녹음 버튼 한 번</li>
+            <li>AI가 아젠다/논의/결정 자동 분류</li>
+            <li>Notion DB에 페이지 자동 생성</li>
+            <li>비용 0원 (무료 티어)</li>
+          </ul>
+        </div>
+        <div class="early-card">
+          <div class="head">검증된 것</div>
+          <ul>
+            <li>PC 열지 않고 핸드폰만으로 완결</li>
+            <li>대화로 요구사항 전달 → Claude가 구조 제안</li>
+          </ul>
+        </div>
+      </div>
+      <div class="cliffhanger">…하지만 실전은 달랐다.</div>
+    </div>
+
+    <!-- ===== 10. INCIDENT ===== -->
+    <div class="slide" data-index="9">
+      <div class="tag">Incident</div>
+      <h2>70분짜리 실제 회의 — 실패</h2>
+      <div class="incident-box">
+        <div class="err-line">⚠️ FUNCTION_INVOCATION_TIMEOUT</div>
+        <div class="incident-timeline">
+          <div><span class="tm">09:00</span>회의 시작, 녹음 ON</div>
+          <div><span class="tm">10:10</span>녹음 종료, 업로드 성공</div>
+          <div><span class="tm">10:11</span>처리 중… 에러. 회의록 생성 실패</div>
+        </div>
+      </div>
+      <div class="incident-note">녹음 원본은 있지만 회의를 다시 할 순 없음. 어떻게든 복구해야 한다.</div>
+    </div>
+
+    <!-- ===== 11. ROOT CAUSE ===== -->
+    <div class="slide" data-index="10">
+      <div class="tag">Root Cause</div>
+      <h2>왜 긴 회의는 실패했나?</h2>
+      <div class="cause-grid">
+        <div class="cause-card">
+          <div class="icon">⏱️</div>
+          <h3>서버 60초 한도</h3>
+          <p>무료 서버는 한 번에 최대 60초만 돌 수 있음. 그 안에 끝나야 함</p>
+        </div>
+        <div class="cause-card">
+          <div class="icon">🤖</div>
+          <h3>AI 한 번의 호출 시간</h3>
+          <p>70분 오디오를 AI에게 한 번에 주면 응답 자체가 60초를 훌쩍 넘김</p>
+        </div>
+      </div>
+      <p style="margin-top:1em">짧을 땐 몰랐던 벽. <strong style="color:var(--text)">실전에서만 드러나는 문제</strong>였다.</p>
+    </div>
+
+    <!-- ===== 12. JOURNEY ===== -->
+    <div class="slide" data-index="11">
+      <div class="tag">Journey</div>
+      <h2>4번의 시도 끝에</h2>
+      <div class="journey">
+        <div class="jn-item fail">
+          <div class="jn-num">1</div>
+          <div class="jn-content">
+            <div class="jn-ask">"AI에게 시간 구간 나눠서 요청하면?"</div>
+            <div class="jn-result"><span class="tag-res tag-fail">실패</span>Gemini가 오디오 시간 옵션을 조용히 무시. 문서엔 "영상 전용"이라 적혀 있었다 — 가정을 먼저 검증했어야 했다</div>
+          </div>
+        </div>
+        <div class="jn-item partial">
+          <div class="jn-num">2</div>
+          <div class="jn-content">
+            <div class="jn-ask">"AI한테 '깊이 생각하지 말라'고 해야 했다"</div>
+            <div class="jn-result"><span class="tag-res tag-partial">부분 해결</span>최신 AI는 기본적으로 "사고 모드"가 켜져 있어 답변 예산을 다 써버림. 단순 전사엔 꺼야 정상 작동</div>
+          </div>
+        </div>
+        <div class="jn-item partial">
+          <div class="jn-num">3</div>
+          <div class="jn-content">
+            <div class="jn-ask">"모델마다 장단점이 다르다"</div>
+            <div class="jn-result"><span class="tag-res tag-partial">부분 해결</span>Flash(빠르지만 긴 입력에 약함) + Pro(정확하지만 느림) — 단계별로 다른 모델 사용</div>
+          </div>
+        </div>
+        <div class="jn-item ok">
+          <div class="jn-num">4</div>
+          <div class="jn-content">
+            <div class="jn-ask">"결국 녹음 자체를 5분씩 나눴다"</div>
+            <div class="jn-result"><span class="tag-res tag-ok">근본 해결</span>처리 단계에서 쪼개려 애쓰지 말고, 녹음할 때부터 5분 단위로 저장 → 각 조각이 60초 안에 처리됨</div>
+          </div>
+        </div>
+      </div>
+      <div class="journey-note">AI 도구는 <strong>"한 번에 완벽"이 아니라 "반복 수정"</strong>이 기본. 한계도 대화하며 발견한다.</div>
+    </div>
+
+    <!-- ===== 13. TEST PARTNER (NEW) ===== -->
+    <div class="slide" data-index="12">
+      <div class="tag">Test Partner</div>
+      <h2>혼자서 70분 회의를 매번 할 순 없었다</h2>
+      <div class="early-grid">
+        <div class="early-card">
+          <div class="head">📻 장시간 샘플 확보</div>
+          <p style="font-size:0.78em;text-align:left;max-width:none;color:var(--text);line-height:1.5;margin-bottom:0.5em"><strong>'김실장의 자동사냥'</strong><br>개발자들의 게임 잡담 채널</p>
+          <ul>
+            <li>회의와 비슷한 톤·길이·용어 밀도</li>
+            <li>30분 / 60분 / 70분 다양한 길이</li>
+            <li>반복 재생·녹음으로 실전 환경 재현</li>
+          </ul>
+        </div>
+        <div class="early-card">
+          <div class="head">📖 용어집 시드 구축</div>
+          <p style="font-size:0.78em;text-align:left;max-width:none;color:var(--text);line-height:1.5;margin-bottom:0.5em">전사 빈도 분석으로<br><strong>게임명 자동 추출</strong></p>
+          <ul>
+            <li>소울류 · 카잔 · 브라운 더스트</li>
+            <li>메탑 · 리세마라 …</li>
+            <li>Notion 용어집 초기 18개 자동 수집</li>
+          </ul>
+        </div>
+      </div>
+      <div class="journey-note">실전 환경이 없으면 <strong>성격이 비슷한 공개 콘텐츠</strong>가 훌륭한 스파링 파트너</div>
+    </div>
+
+    <!-- ===== 14. AI REVIEW (NEW) ===== -->
+    <div class="slide" data-index="13">
+      <div class="tag">Review</div>
+      <h2>AI 리뷰로도 못 잡는 것이 있다</h2>
+      <div class="early-grid">
+        <div class="early-card" style="border-color:rgba(95,207,128,0.28)">
+          <div class="head" style="color:var(--green)">🤖 AI 리뷰가 잡은 것</div>
+          <ul>
+            <li>경합 조건(race) — 완료 순서 꼬임 방지</li>
+            <li>재시도 폭주 — rate-limit 초과 위험</li>
+            <li>네트워크 재연결 시 지수 백오프</li>
+          </ul>
+        </div>
+        <div class="early-card" style="border-color:rgba(239,74,91,0.3)">
+          <div class="head" style="color:var(--rec)">🙋 실제로 써보고야 발견</div>
+          <p style="font-size:0.72em;text-align:left;max-width:none;color:var(--text);margin-bottom:0.5em">"요약 저장 실패" 뒤 <strong>재시도 버튼</strong>을 눌렀더니…</p>
+          <ul>
+            <li>이미 완료된 전사 4개를 전부 삭제</li>
+            <li>처음부터 다시 녹음 상태로 리셋</li>
+            <li>AI 리뷰는 이 흐름을 보지 못함</li>
+          </ul>
+        </div>
+      </div>
+      <div class="journey-note">코드를 직접 못 봐도, <strong>실제로 한 번 써보는 것</strong>이 가장 강력한 검증. AI 리뷰는 보조.</div>
+    </div>
+
+    <!-- ===== 15. OPERATION (NEW) ===== -->
+    <div class="slide" data-index="14">
+      <div class="tag">Operation</div>
+      <h2>운영하면서 또 배운 3가지</h2>
+      <div class="quality-grid">
+        <div class="quality-card">
+          <div class="icon">📵</div>
+          <h3 style="color:var(--warm)">앱은 언제든 죽는다</h3>
+          <p>제스처 한 번에 134개 세그먼트 작업 중단 — 복구 경로가 개발자용 CLI뿐</p>
+          <div class="ex">→ 중간 상태는 반드시 저장</div>
+        </div>
+        <div class="quality-card">
+          <div class="icon">🔄</div>
+          <h3 style="color:var(--warm)">AI도 관성에 빠진다</h3>
+          <p>"이전 실패 기록"이 있어도 리팩터 중 조용히 이전 방식으로 회귀</p>
+          <div class="ex">→ 중요한 결정은 코드에 가드로 박자</div>
+        </div>
+        <div class="quality-card">
+          <div class="icon">📜</div>
+          <h3 style="color:var(--warm)">로그는 1시간 만에 사라진다</h3>
+          <p>무료 플랫폼의 로그 보존 한계 — 문제 생겼을 때 원인 추적 불가</p>
+          <div class="ex">→ 진행 기록을 Notion에 자동 첨부</div>
         </div>
       </div>
     </div>
 
-    <!-- ===== 13. LEARNINGS ===== -->
-    <div class="slide" data-index="12">
+    <!-- ===== 16. EPISODE (NEW) ===== -->
+    <div class="slide" data-index="15">
+      <div class="tag">Episode</div>
+      <h2>배포하고 보니 낯선 사람이 쓰고 있었다</h2>
+      <div class="incident-box" style="max-width:42em">
+        <div class="err-line">🔍 데이터 손실 조사 중 — 본인이 녹음한 적 없는 세션 3건 발견 (민감 콘텐츠 포함)</div>
+        <div class="incident-timeline">
+          <div><span class="tm">원인</span>무료 플랜의 "Standard Protection"은 <strong style="color:var(--text)">Preview만 보호</strong> · Production은 공개였음</div>
+          <div><span class="tm">영향</span>본인의 AI 키·Notion 토큰으로 타인 녹음이 처리되고 있었음</div>
+          <div><span class="tm">대응</span>앱 레벨 접근 토큰 도입 · 401은 <strong style="color:var(--text)">조용히 리셋</strong>(공격자에게 "토큰 존재" 단서 차단)</div>
+        </div>
+      </div>
+      <div class="incident-note"><strong style="color:var(--warm)">공개 URL = 공개 API.</strong> 무료 배포의 보호 범위는 내가 직접 확인해야 한다.</div>
+    </div>
+
+    <!-- ===== PART 3 SECTION COVER ===== -->
+    <div class="slide section-cover part-3" data-index="part3">
+      <div class="section-bignum">03</div>
+      <div class="tag">PART 03</div>
+      <h1>정리</h1>
+      <div class="sub">공유하고 싶은 실전 팁 4가지</div>
+    </div>
+
+    <!-- ===== 17. TIPS ===== -->
+    <div class="slide" data-index="16">
       <div class="tag">Takeaway</div>
-      <h2>배운 점</h2>
+      <h2>공유하고 싶은 실전 팁 4가지</h2>
       <div class="learn-list">
         <div class="learn-item">
-          <div class="learn-icon">💬</div>
+          <div class="learn-icon">🧪</div>
           <div class="learn-body">
-            <strong>AI와 대화하며 개발</strong>
-            <p>전문 프로그래머가 아니어도 가능. "만들고 싶은 것"을 말로 설명하면 구성 요소·대안·트레이드오프를 AI가 정리해준다.</p>
+            <strong>작게 검증부터</strong>
+            <p>새 기능 쓰기 전, 1분짜리 더미 입력으로 API가 정말 되는지 먼저 확인. "문서엔 된다고 적혀 있었지만 silently 무시"되는 경우가 실제로 있다.</p>
           </div>
         </div>
         <div class="learn-item">
-          <div class="learn-icon">🔨</div>
+          <div class="learn-icon">🔎</div>
           <div class="learn-body">
-            <strong>첫 버전은 실전에서 깨진다</strong>
-            <p>30분에선 잘 되던 게 70분에선 부서짐. 써봐야 문제가 보이고, 그제야 진짜 구조가 드러난다.</p>
+            <strong>증상에서 멈추지 말기</strong>
+            <p>"한도 올렸는데 여전히 빈 응답" 같은 신호는 1차 해석의 벽. 한 단계 더 파보면 진짜 원인(예: AI의 내부 사고 모드)이 보인다.</p>
           </div>
         </div>
         <div class="learn-item">
-          <div class="learn-icon">🤝</div>
+          <div class="learn-icon">🙋</div>
           <div class="learn-body">
-            <strong>AI의 한계도 AI에게 물어서 해결</strong>
-            <p>Gemini의 오디오 처리 문제를 Claude와 대화하며 파악·우회. AI 도구 하나에 종속되기보다 서로 보완시키는 관점.</p>
+            <strong>실제 사용이 최고의 리뷰</strong>
+            <p>AI가 만든 코드를 직접 읽지 못해도 괜찮다.</p>
+            <p><strong style="color:var(--text)">한 번이라도 써보는 것이 가장 강력한 검증</strong>이고, AI 리뷰는 보조.</p>
+          </div>
+        </div>
+        <div class="learn-item">
+          <div class="learn-icon">📌</div>
+          <div class="learn-body">
+            <strong>AI에게 준 규칙도 다시 묻기</strong>
+            <p>문서로 기록해도 다음 작업에서 그대로 지키는 건 아니다. 리팩터·재작업 뒤엔 "그 결정 유지됐나?"를 다시 확인.</p>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- ===== 14. CLOSING ===== -->
-    <div class="slide" data-index="13">
+    <!-- ===== 18. CLOSING ===== -->
+    <div class="slide" data-index="17">
       <div class="cover-icon">🙋</div>
       <h2>감사합니다</h2>
       <p>질문 받겠습니다</p>
       <div class="closing-links">
-        <a href="https://github.com/rwang2gun/AI-Tips" target="_blank" class="closing-link primary">GitHub 리포 →</a>
-        <a href="meeting-notes/" class="closing-link secondary">회의록 앱 열기 →</a>
+        <a href="#" class="closing-link primary" onclick="goTo(0);return false">↑ 첫 슬라이드로</a>
+        <a href="index.html" class="closing-link secondary">← 상위 페이지로</a>
       </div>
       <div class="cover-badges" style="margin-top:1.1em">
         <div class="badge">Made with Claude Code</div>
@@ -857,7 +1032,7 @@ p{font-size:0.95em;color:var(--text-muted);line-height:1.65;text-align:center;ma
       <button class="nav-btn" id="tocBtn" title="목차 (T)">☰</button>
       <div class="nav-dots" id="dots"></div>
       <select class="nav-jump" id="jumpSelect" title="페이지 이동"></select>
-      <span class="nav-counter" id="counter">1 / 14</span>
+      <span class="nav-counter" id="counter">1 / 21</span>
       <button class="nav-btn" id="nextBtn" onclick="go(1)">→</button>
     </div>
   </div><!-- /deck -->
@@ -865,6 +1040,36 @@ p{font-size:0.95em;color:var(--text-muted);line-height:1.65;text-align:center;ma
 
 <script>
 const slides = document.querySelectorAll('.slide');
+
+// 각 콘텐츠 슬라이드에 Part 클래스 자동 주입 (section cover는 HTML에 이미 있음).
+// 인덱스 범위는 slideMeta 순서 기준: Part1 = 1~8, Part2 = 9~17, Part3 = 18~20
+[
+  { from: 1, to: 8, cls: 'part-1' },
+  { from: 9, to: 17, cls: 'part-2' },
+  { from: 18, to: 20, cls: 'part-3' },
+].forEach(({ from, to, cls }) => {
+  for (let i = from; i <= to; i++) slides[i]?.classList.add(cls);
+});
+
+// 파트별 색상을 tag/bignum에 인라인 스타일로 주입.
+// CSS 캐스케이드에서 이유 불명으로 색상이 안 먹는 경우가 있어 JS 기반 확정 주입.
+const partStyles = {
+  'part-1': { fg: '#7c6aef', tagBg: 'rgba(124,106,239,0.16)', numColor: 'rgba(124,106,239,0.15)' },
+  'part-2': { fg: '#d4a574', tagBg: 'rgba(212,165,116,0.22)', numColor: 'rgba(212,165,116,0.15)' },
+  'part-3': { fg: '#5fcf80', tagBg: 'rgba(95,207,128,0.22)',  numColor: 'rgba(95,207,128,0.15)' },
+};
+slides.forEach(slide => {
+  const partCls = [...slide.classList].find(c => partStyles[c]);
+  if (!partCls) return;
+  const s = partStyles[partCls];
+  slide.querySelectorAll('.tag').forEach(tag => {
+    tag.style.setProperty('color', s.fg, 'important');
+    tag.style.setProperty('background', s.tagBg, 'important');
+  });
+  const bignum = slide.querySelector('.section-bignum');
+  if (bignum) bignum.style.setProperty('color', s.numColor, 'important');
+});
+
 const dots = document.getElementById('dots');
 const counter = document.getElementById('counter');
 const jumpSelect = document.getElementById('jumpSelect');
@@ -874,19 +1079,26 @@ let cur = 0;
 const total = slides.length;
 
 const slideMeta = [
-  { title: 'Claude Code로 회의록 앱 만들기', tag: 'Cover' },
-  { title: '회의실에서 생기는 문제', tag: 'Why' },
+  { title: '회의록 생성기 with Claude', tag: 'Cover' },
+  { title: 'Part 01 · 지금의 앱', tag: 'Part 1' },
+  { title: '회의록을 남겨야 하는데…', tag: 'Why' },
   { title: '원하는 흐름', tag: 'Idea' },
-  { title: '처음 만든 구조', tag: 'v1' },
-  { title: '30분짜리 회의에선 잘 됐다', tag: 'Early' },
+  { title: '지금의 동작 파이프라인', tag: 'Flow' },
+  { title: '용어집 Notion 연동', tag: 'Feature 1' },
+  { title: '작성 가이드 Notion 연동', tag: 'Feature 2' },
+  { title: '근거 인용으로 환각 탐지', tag: 'Feature 3' },
+  { title: '품질을 지키는 3중 안전장치', tag: 'Summary' },
+  { title: 'Part 02 · 만들며 겪은 일', tag: 'Part 2' },
+  { title: '1분짜리 자체 테스트에선 잘 됐다', tag: 'Flashback' },
   { title: '70분 회의 — 실패', tag: 'Incident' },
   { title: '왜 긴 회의는 실패했나', tag: 'Cause' },
   { title: '4번의 시도 끝에', tag: 'Journey' },
-  { title: '품질이 이상했다', tag: 'Quality' },
-  { title: '3중 안전장치', tag: 'Solutions' },
-  { title: '실제 동작 파이프라인', tag: 'Flow' },
-  { title: '다른 앱과 뭐가 다른가', tag: 'Diff' },
-  { title: '배운 점', tag: 'Takeaway' },
+  { title: '테스트 파트너: 김실장의 자동사냥', tag: 'Test' },
+  { title: 'AI 리뷰로 못 잡는 것', tag: 'Review' },
+  { title: '운영하면서 또 배운 3가지', tag: 'Operation' },
+  { title: '낯선 사람이 쓰고 있었다', tag: 'Episode' },
+  { title: 'Part 03 · 정리', tag: 'Part 3' },
+  { title: '공유하고 싶은 실전 팁 4가지', tag: 'Tips' },
   { title: '감사합니다', tag: 'Q&A' },
 ];
 
@@ -915,9 +1127,12 @@ jumpSelect.addEventListener('keydown',e=>e.stopPropagation());
 
 function goTo(n){
   if(n<0||n>=total)return;
-  slides[cur].className='slide'+(n>cur?' prev':'');
+  // classList 기반 — 기존 className 통째 할당은 section-cover/part-* 등 커스텀 클래스를 날려버림 (Codex 리뷰 지적)
+  slides[cur].classList.remove('active');
+  slides[cur].classList.toggle('prev', n > cur);
   cur=n;
-  slides[cur].className='slide active';
+  slides[cur].classList.remove('prev');
+  slides[cur].classList.add('active');
   slides[cur].scrollTop=0;
   document.querySelectorAll('.nav-dot').forEach((d,i)=>d.classList.toggle('active',i===cur));
   document.querySelectorAll('.toc-item').forEach((t,i)=>t.classList.toggle('active',i===cur));
