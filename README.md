@@ -12,7 +12,7 @@ Claude × Notion 활용 가이드 + 실제로 만들어본 앱 모음.
 | 서비스 | 링크 | 용도 |
 |--------|------|------|
 | **Vercel Dashboard** | [vercel.com/rwang2guns-projects/ai-tips](https://vercel.com/rwang2guns-projects/ai-tips) | 배포 관리, 환경변수, Blob, 로그 |
-| **Gemini API 사용량** | [aistudio.google.com/usage](https://aistudio.google.com/u/1/usage?timeRange=last-28-days) | API 호출 횟수, 무료 한도 확인 |
+| **Gemini API 사용량** | [aistudio.google.com/spend](https://aistudio.google.com/spend)) | API 호출 횟수, 무료 한도 확인 |
 | **Notion Integrations** | [notion.so/my-integrations](https://www.notion.so/my-integrations) | Integration 토큰 관리 |
 | **GitHub 리포** | [github.com/rwang2gun/AI-Tips](https://github.com/rwang2gun/AI-Tips) | 소스 코드 |
 | **자동 회의록 DB** | [Notion](https://www.notion.so/343b23cf3720805a885aef6795242b77) | 회의록 페이지 확인 |
