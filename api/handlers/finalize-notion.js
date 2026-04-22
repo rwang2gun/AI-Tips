@@ -59,10 +59,13 @@ export default async function handleFinalizeNotion(req, res) {
   // cleanup 직전에 만들어 Blob 폴더의 "최종 상태"를 박제.
   // 실패해도 페이지 생성은 진행 (manifest가 없어도 요약/전사는 보존되므로).
   let manifestUpload = null;
-  let flaggedSegments = [];
+  let retentionIndices = new Set();
   try {
     const resultJsonSize = JSON.stringify(resultJson).length;
-    const { text: manifestText, flaggedSegments: flagged } = await buildManifest({
+    const {
+      text: manifestText,
+      retentionIndices: retained,
+    } = await buildManifest({
       sessionId,
       title: meetingData.title,
       date,
@@ -74,7 +77,7 @@ export default async function handleFinalizeNotion(req, res) {
       transcriptMergedChars,
       resultJsonSize,
     });
-    flaggedSegments = flagged || [];
+    retentionIndices = retained || new Set();
     const filename = buildManifestFilename(meetingData.title, date);
     const id = await uploadFileToNotion({
       body: manifestText,
@@ -98,19 +101,21 @@ export default async function handleFinalizeNotion(req, res) {
     manifestUpload,
   });
 
-  // 청크 + 전사 + 결과 파일 정리. 단, flagged 세그먼트(loop/짧은 전사)는
-  // 사후 재전사/오프라인 분석을 위해 오디오 청크와 raw.txt/meta.json을 보존.
-  // - 보존 대상: meetings/<sid>/seg-NN/chunk-*.bin (flagged index만)
-  //             meetings/<sid>/transcript-NN.raw.txt (flagged index만)
-  //             meetings/<sid>/transcript-NN.meta.json (flagged index만)
+  // 청크 + 전사 + 결과 파일 정리. 단, retentionIndices에 해당하는 세그먼트(loop/짧은 전사로
+  // flag됐거나 raw.txt가 남아 있는 세그먼트)는 사후 재전사/오프라인 분석을 위해 오디오 청크와
+  // raw.txt/meta.json을 보존.
+  // - 보존 대상: meetings/<sid>/seg-NN/chunk-*.bin          (retentionIndices 포함 index)
+  //             meetings/<sid>/transcript-NN.raw.txt        (retentionIndices 포함 index)
+  //             meetings/<sid>/transcript-NN.meta.json      (retentionIndices 포함 index)
   // - 삭제 대상: 그 외 전체 (transcript.txt, transcript-NN.txt, result.json 포함 —
   //             Notion에 이미 요약/전사/진행로그가 박제됨)
+  // retentionIndices는 manifest에서 `meta.flagged==true ∪ raw.txt 존재`로 계산되므로
+  // meta.json 업로드가 실패한 flagged 세그먼트도 raw.txt만 있으면 보존됨.
   try {
     const all = await listAllBlobs(prefix);
-    const flaggedSet = new Set(flaggedSegments.map((s) => s.index));
     const toDelete = [];
     for (const b of all) {
-      if (!flaggedSet.size) { toDelete.push(b.url); continue; }
+      if (!retentionIndices.size) { toDelete.push(b.url); continue; }
       const segMatch = b.pathname.match(/\/seg-(\d+)\/chunk-\d+\.bin$/);
       const rawMatch = b.pathname.match(/\/transcript-(\d+)\.raw\.txt$/);
       const metaMatch = b.pathname.match(/\/transcript-(\d+)\.meta\.json$/);
@@ -118,14 +123,14 @@ export default async function handleFinalizeNotion(req, res) {
         : rawMatch ? Number(rawMatch[1])
         : metaMatch ? Number(metaMatch[1])
         : null;
-      if (retainedIdx != null && flaggedSet.has(retainedIdx)) continue;
+      if (retainedIdx != null && retentionIndices.has(retainedIdx)) continue;
       toDelete.push(b.url);
     }
     if (toDelete.length) {
       await del(toDelete);
     }
-    if (flaggedSet.size) {
-      console.log(`[cleanup] retained flagged segments: ${[...flaggedSet].sort((a, b) => a - b).join(', ')}`);
+    if (retentionIndices.size) {
+      console.log(`[cleanup] retained segments: ${[...retentionIndices].sort((a, b) => a - b).join(', ')}`);
     }
   } catch (e) {
     console.warn('[cleanup] failed:', e?.message);

@@ -60,7 +60,8 @@
       "PowerShell(codex review --help 2>&1)",
       "PowerShell(codex exec --help 2>&1)",
       "Bash(codex exec *)",
-      "Bash(grep -n \"transcript-\\\\\\\\\\\\\\\\d\\\\|seg-\" lib/audio/chunking.js scripts/recover-session.js)"
+      "Bash(grep -n \"transcript-\\\\\\\\\\\\\\\\d\\\\|seg-\" lib/audio/chunking.js scripts/recover-session.js)",
+      "Bash(codex review *)"
     ]
   }
 }

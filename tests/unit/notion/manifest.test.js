@@ -66,7 +66,7 @@ test('buildManifest: flagged 세그먼트 있으면 경고 섹션 + flaggedSegme
     { pathname: `meetings/${sid}/transcript-01.meta.json`, url: 'http://m/1', size: 300 },
     { pathname: `meetings/${sid}/seg-01/chunk-0000.bin`, url: 'http://a/1', size: 1024 },
   ];
-  const { text, flaggedSegments } = await buildManifest({
+  const { text, flaggedSegments, retentionIndices } = await buildManifest({
     ...baseArgs,
     listBlobs: async () => blobs,
     fetchImpl: makeFetchImpl({
@@ -77,8 +77,9 @@ test('buildManifest: flagged 세그먼트 있으면 경고 섹션 + flaggedSegme
         segmentIndex: 1,
         model: 'gemini-2.5-flash',
         finishReason: 'STOP',
-        rawLength: 50,
-        normalizedLength: 50,
+        rawLength: 17,
+        rawByteLength: 50,
+        normalizedLength: 17,
         loopDetected: false,
         longestRun: null,
         flagged: true,
@@ -88,11 +89,35 @@ test('buildManifest: flagged 세그먼트 있으면 경고 섹션 + flaggedSegme
   assert.ok(text.includes('## 전사 품질 경고'));
   assert.ok(text.includes('flagged 세그먼트 1개'));
   assert.ok(text.includes('[01]'));
-  assert.ok(text.includes('short rawLength=50'));
+  assert.ok(text.includes('short rawBytes=50'));
   assert.ok(text.includes('retention: raw.txt, 오디오'));
   assert.equal(flaggedSegments.length, 1);
   assert.equal(flaggedSegments[0].index, 1);
   assert.equal(flaggedSegments[0].flagged, true);
+  assert.ok(retentionIndices.has(1));
+});
+
+test('buildManifest: meta 업로드 실패해도 raw.txt 있으면 retentionIndices 포함 (P1 회귀 방어)', async () => {
+  const sid = baseArgs.sessionId;
+  // meta.json은 누락, raw.txt만 남아 있는 시나리오 — sidecar upload 일부 실패 복구 경로.
+  const blobs = [
+    { pathname: `meetings/${sid}/transcript-00.txt`, url: 'http://t/0', size: 1200 },
+    { pathname: `meetings/${sid}/transcript-00.raw.txt`, url: 'http://r/0', size: 1200 },
+    { pathname: `meetings/${sid}/seg-00/chunk-0000.bin`, url: 'http://a/0', size: 1024 },
+  ];
+  const { text, flaggedSegments, retentionIndices } = await buildManifest({
+    ...baseArgs,
+    listBlobs: async () => blobs,
+    fetchImpl: makeFetchImpl({
+      'http://t/0': '...',
+      'http://r/0': '...',
+    }),
+  });
+  // meta가 없으니 flaggedSegments는 비어 있지만 retentionIndices는 raw.txt 기준으로 보존.
+  assert.equal(flaggedSegments.length, 0);
+  assert.ok(retentionIndices.has(0));
+  // 경고 섹션은 flaggedSegments 기준이라 미출력 (운영상 허용 가능한 trade-off).
+  assert.ok(!text.includes('## 전사 품질 경고'));
 });
 
 test('buildManifest: loop 탐지된 flagged 세그먼트는 longest run 요약 노출', async () => {

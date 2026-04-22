@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { createUserContent, createPartFromUri } from '@google/genai';
 import { buildSegmentTranscribePrompt } from '../../lib/prompts/transcribe.js';
 import { createGeminiClient } from '../../lib/clients/gemini.js';
@@ -9,8 +10,9 @@ import { applySynonymReplacements, detectLoop } from '../../lib/transcript/post-
 
 const TRANSCRIBE_MODEL = 'gemini-2.5-flash';
 // 5분 세그먼트가 이보다 짧게 전사되면 품질 저하(발화 없는 구간 or 조기 종료)로 간주하고 flag.
-// 정상 5분 회의는 최소 수천 byte 단위 (2026-04-22 세션 seg 13이 1,483 bytes로 비정상 케이스).
-const SHORT_TRANSCRIPT_THRESHOLD = 2000;
+// 단위는 UTF-8 byte (JS 문자열 length가 아님 — 한글은 length≈byte/3이라 문자 기준이면 정상 700~1500자 세그먼트가
+// 전부 false-positive flag). 2026-04-22 세션 seg 13이 1,483 UTF-8 bytes로 비정상 케이스.
+const SHORT_TRANSCRIPT_THRESHOLD_BYTES = 2000;
 
 // segment 단계 2: 한 세그먼트 전사 → transcript-NN.txt
 export default async function handleTranscribeSegment(req, res) {
@@ -65,23 +67,32 @@ export default async function handleTranscribeSegment(req, res) {
     console.log(`[transcribe-segment ${segmentIndex}] synonym replacements:`, applied);
   }
 
-  const flagged = loopReport.hasLoop || rawTranscript.length < SHORT_TRANSCRIPT_THRESHOLD;
+  const rawByteLength = Buffer.byteLength(rawTranscript, 'utf8');
+  const flagged = loopReport.hasLoop || rawByteLength < SHORT_TRANSCRIPT_THRESHOLD_BYTES;
   if (flagged) {
-    console.warn(`[transcribe-segment ${segmentIndex}] FLAGGED — loop=${loopReport.hasLoop} rawLen=${rawTranscript.length}${loopReport.longestRun ? ` longestRun="${loopReport.longestRun.token}"×${loopReport.longestRun.count}` : ''}`);
+    console.warn(`[transcribe-segment ${segmentIndex}] FLAGGED — loop=${loopReport.hasLoop} rawBytes=${rawByteLength}${loopReport.longestRun ? ` longestRun="${loopReport.longestRun.token}"×${loopReport.longestRun.count}` : ''}`);
   }
 
   const segKey = String(segmentIndex).padStart(2, '0');
   const baseKey = `meetings/${sessionId}/transcript-${segKey}`;
   await putPublic(`${baseKey}.txt`, transcript, { contentType: 'text/plain; charset=utf-8' });
 
-  // Sidecar 저장은 best-effort — 실패해도 transcript 업로드는 성공으로 처리.
-  // retention/진단을 위한 것이라 본 경로를 깨뜨리지 않아야 함.
+  // Sidecar 저장 — flagged 세그먼트는 finalize cleanup의 retention 대상이므로 증거 손실 방어가 최우선.
+  //
+  // 쓰기 순서 중요: raw.txt 먼저, meta.json 나중.
+  //   - finalize는 "meta.flagged==true OR raw.txt 존재" 합집합을 retention 대상으로 판정.
+  //   - 따라서 meta.json 업로드가 실패해도 raw.txt만 있으면 오디오/raw가 cleanup에서 보존됨.
+  //   - raw.txt는 flagged 세그먼트에서만 업로드되므로 존재 자체가 flag 신호.
+  //
+  // 비flagged 세그먼트의 meta.json 실패는 진단 품질만 떨어뜨리고 증거 손실은 없음 (retention 대상 아님).
+  // 본 응답은 실패해도 200 유지 — 클라가 sidecar 때문에 전사 자체를 재시도하면 비용 낭비.
   const meta = {
     segmentIndex,
     model: TRANSCRIBE_MODEL,
     finishReason: result?.candidates?.[0]?.finishReason ?? null,
     usageMetadata: result?.usageMetadata ?? null,
     rawLength: rawTranscript.length,
+    rawByteLength,
     normalizedLength: transcript.length,
     loopDetected: loopReport.hasLoop,
     longestRun: loopReport.longestRun,
@@ -90,18 +101,29 @@ export default async function handleTranscribeSegment(req, res) {
     flagged,
     timestamp: new Date().toISOString(),
   };
+  let rawSaved = false;
+  let metaSaved = false;
+  if (flagged) {
+    try {
+      await putPublic(`${baseKey}.raw.txt`, rawTranscript, {
+        contentType: 'text/plain; charset=utf-8',
+      });
+      rawSaved = true;
+    } catch (e) {
+      console.warn(`[transcribe-segment ${segmentIndex}] raw.txt upload failed:`, e?.message);
+    }
+  }
   try {
     await putPublic(`${baseKey}.meta.json`, JSON.stringify(meta, null, 2), {
       contentType: 'application/json; charset=utf-8',
     });
-    // Raw는 flagged 세그먼트에서만 보존 — 정상 세그먼트에서는 normalized가 이미 충분한 증거.
-    if (flagged) {
-      await putPublic(`${baseKey}.raw.txt`, rawTranscript, {
-        contentType: 'text/plain; charset=utf-8',
-      });
-    }
+    metaSaved = true;
   } catch (e) {
-    console.warn(`[transcribe-segment ${segmentIndex}] sidecar upload failed:`, e?.message);
+    console.warn(`[transcribe-segment ${segmentIndex}] meta.json upload failed:`, e?.message);
+  }
+  if (flagged && !rawSaved && !metaSaved) {
+    // 양쪽 다 실패하면 retention 신호가 하나도 없음 — 경고 로그로 수동 개입 여지만 남김.
+    console.error(`[transcribe-segment ${segmentIndex}] BOTH sidecars failed for flagged segment — evidence will be lost at cleanup`);
   }
 
   return jsonResponse(res, 200, {
