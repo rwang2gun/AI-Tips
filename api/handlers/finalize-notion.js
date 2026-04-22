@@ -12,6 +12,7 @@ import {
 import { createMeetingNotionPage } from '../../lib/notion/page-create.js';
 import { buildManifest, buildManifestFilename } from '../../lib/notion/manifest.js';
 import { readJsonBody, jsonResponse } from '../../lib/http/body-parser.js';
+import { isCleanupTarget } from '../../lib/storage/usage.js';
 
 // 클라 SEGMENT_SECONDS와 보조를 맞춰야 하는 상수.
 // (드리프트 방지: 같은 값을 meeting-notes/app.js 상단에서도 정의)
@@ -59,13 +60,9 @@ export default async function handleFinalizeNotion(req, res) {
   // cleanup 직전에 만들어 Blob 폴더의 "최종 상태"를 박제.
   // 실패해도 페이지 생성은 진행 (manifest가 없어도 요약/전사는 보존되므로).
   let manifestUpload = null;
-  let retentionIndices = new Set();
   try {
     const resultJsonSize = JSON.stringify(resultJson).length;
-    const {
-      text: manifestText,
-      retentionIndices: retained,
-    } = await buildManifest({
+    const { text: manifestText } = await buildManifest({
       sessionId,
       title: meetingData.title,
       date,
@@ -77,7 +74,6 @@ export default async function handleFinalizeNotion(req, res) {
       transcriptMergedChars,
       resultJsonSize,
     });
-    retentionIndices = retained || new Set();
     const filename = buildManifestFilename(meetingData.title, date);
     const id = await uploadFileToNotion({
       body: manifestText,
@@ -101,36 +97,18 @@ export default async function handleFinalizeNotion(req, res) {
     manifestUpload,
   });
 
-  // 청크 + 전사 + 결과 파일 정리. 단, retentionIndices에 해당하는 세그먼트(loop/짧은 전사로
-  // flag됐거나 raw.txt가 남아 있는 세그먼트)는 사후 재전사/오프라인 분석을 위해 오디오 청크와
-  // raw.txt/meta.json을 보존.
-  // - 보존 대상: meetings/<sid>/seg-NN/chunk-*.bin          (retentionIndices 포함 index)
-  //             meetings/<sid>/transcript-NN.raw.txt        (retentionIndices 포함 index)
-  //             meetings/<sid>/transcript-NN.meta.json      (retentionIndices 포함 index)
-  // - 삭제 대상: 그 외 전체 (transcript.txt, transcript-NN.txt, result.json 포함 —
-  //             Notion에 이미 요약/전사/진행로그가 박제됨)
-  // retentionIndices는 manifest에서 `meta.flagged==true ∪ raw.txt 존재`로 계산되므로
-  // meta.json 업로드가 실패한 flagged 세그먼트도 raw.txt만 있으면 보존됨.
+  // 파생 결과물만 삭제. 오디오/raw/meta는 모두 보존 — 24h 이상 경과한 뒤 결과 UI의
+  // 수동 cleanup 버튼(cleanup-old-audio action)으로 정리됨.
+  // isCleanupTarget=true인 pathname은 보존, false면 삭제 (즉 화이트리스트 역전).
+  // 보존 (화이트리스트):
+  //   seg-*/chunk-*.bin, transcript-*.raw.txt, transcript-*.meta.json
+  // 삭제 (Notion에 박제됨):
+  //   transcript.txt, transcript-NN.txt, result.json
   try {
     const all = await listAllBlobs(prefix);
-    const toDelete = [];
-    for (const b of all) {
-      if (!retentionIndices.size) { toDelete.push(b.url); continue; }
-      const segMatch = b.pathname.match(/\/seg-(\d+)\/chunk-\d+\.bin$/);
-      const rawMatch = b.pathname.match(/\/transcript-(\d+)\.raw\.txt$/);
-      const metaMatch = b.pathname.match(/\/transcript-(\d+)\.meta\.json$/);
-      const retainedIdx = segMatch ? Number(segMatch[1])
-        : rawMatch ? Number(rawMatch[1])
-        : metaMatch ? Number(metaMatch[1])
-        : null;
-      if (retainedIdx != null && retentionIndices.has(retainedIdx)) continue;
-      toDelete.push(b.url);
-    }
+    const toDelete = all.filter((b) => !isCleanupTarget(b.pathname)).map((b) => b.url);
     if (toDelete.length) {
       await del(toDelete);
-    }
-    if (retentionIndices.size) {
-      console.log(`[cleanup] retained segments: ${[...retentionIndices].sort((a, b) => a - b).join(', ')}`);
     }
   } catch (e) {
     console.warn('[cleanup] failed:', e?.message);

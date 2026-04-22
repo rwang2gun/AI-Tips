@@ -83,6 +83,22 @@
       <div class="result-icon">✅</div>
       <h2 id="resultTitle">회의록이 생성되었습니다</h2>
       <a id="resultLink" href="#" target="_blank" class="result-link">Notion에서 열기 →</a>
+      <div class="storage-panel" id="storagePanel">
+        <div class="storage-line">
+          <span>서버 저장소</span>
+          <strong id="storageTotal">계산 중…</strong>
+        </div>
+        <div class="storage-line muted">
+          <span>24h+ 삭제 가능</span>
+          <strong id="storageDeletable">—</strong>
+        </div>
+        <div class="storage-line warn hidden" id="storageStuckLine">
+          <span>회복 필요(실패 세션)</span>
+          <strong id="storageStuck">—</strong>
+        </div>
+        <button class="ghost-btn" id="cleanupBtn" type="button" disabled>24h+ 오디오 정리</button>
+        <div class="storage-msg" id="storageMsg"></div>
+      </div>
       <button class="ghost-btn" id="newBtn" type="button">새 회의 녹음</button>
     </section>
 

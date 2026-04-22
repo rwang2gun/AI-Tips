@@ -46,6 +46,12 @@ const els = {
   result: document.getElementById('result'),
   resultLink: document.getElementById('resultLink'),
   resultTitle: document.getElementById('resultTitle'),
+  storageTotal: document.getElementById('storageTotal'),
+  storageDeletable: document.getElementById('storageDeletable'),
+  storageStuck: document.getElementById('storageStuck'),
+  storageStuckLine: document.getElementById('storageStuckLine'),
+  cleanupBtn: document.getElementById('cleanupBtn'),
+  storageMsg: document.getElementById('storageMsg'),
   newBtn: document.getElementById('newBtn'),
   error: document.getElementById('error'),
   errorText: document.getElementById('errorText'),
@@ -825,6 +831,73 @@ function showResult(data) {
   showSection('result');
   els.resultTitle.textContent = data.title || '회의록이 생성되었습니다';
   els.resultLink.href = data.notionUrl;
+  // Non-blocking — 스토리지 조회는 실패해도 결과 페이지는 그대로.
+  refreshStorageUsage().catch((e) => {
+    console.warn('[storage-usage] refresh failed:', e?.message);
+  });
+}
+
+// ===== 스토리지 사용량 / 수동 정리 =====
+
+function formatBytes(n) {
+  if (n == null) return '—';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+async function postAction(action, body = {}) {
+  const token = getAccessToken();
+  const res = await fetch('/api/process-meeting', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Action': action,
+      'x-app-token': token,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`${action} ${res.status}`);
+  }
+  return res.json();
+}
+
+async function refreshStorageUsage() {
+  if (!els.storageTotal) return;
+  els.storageTotal.textContent = '계산 중…';
+  els.storageDeletable.textContent = '—';
+  const data = await postAction('storage-usage');
+  els.storageTotal.textContent = formatBytes(data.totalBytes);
+  els.storageDeletable.textContent = data.deletableBytes > 0
+    ? formatBytes(data.deletableBytes)
+    : '없음';
+  if (data.stuckBytes > 0) {
+    els.storageStuckLine.classList.remove('hidden');
+    const stuckSessionCount = (data.sessions || []).filter((s) => s.stuck).length;
+    els.storageStuck.textContent = `${stuckSessionCount}개 세션 / ${formatBytes(data.stuckBytes)}`;
+  } else {
+    els.storageStuckLine.classList.add('hidden');
+  }
+  els.cleanupBtn.disabled = !(data.deletableBytes > 0);
+}
+
+async function handleCleanupClick() {
+  if (!window.confirm('24시간 이상 지난 오디오/진단 파일을 삭제합니다. 되돌릴 수 없습니다. 계속할까요?')) return;
+  els.cleanupBtn.disabled = true;
+  els.storageMsg.textContent = '삭제 중…';
+  try {
+    const res = await postAction('cleanup-old-audio');
+    els.storageMsg.textContent = `삭제 완료 — ${res.deletedFiles}개 파일 / ${formatBytes(res.freedBytes)} 확보`;
+    await refreshStorageUsage();
+  } catch (e) {
+    els.storageMsg.textContent = `실패: ${e?.message || 'unknown'}`;
+    els.cleanupBtn.disabled = false;
+  }
+}
+
+if (els.cleanupBtn) {
+  els.cleanupBtn.addEventListener('click', handleCleanupClick);
 }
 
 function showError(msg) {

@@ -76,6 +76,8 @@ import handleTranscribeSegment from './handlers/transcribe-segment.js';
 import handleMergeTranscripts from './handlers/merge-transcripts.js';
 import handleSummarize from './handlers/summarize.js';
 import handleFinalizeNotion from './handlers/finalize-notion.js';
+import handleStorageUsage from './handlers/storage-usage.js';
+import handleCleanupOldAudio from './handlers/cleanup-old-audio.js';
 import handleLegacyPrepare from './handlers/legacy/prepare.js';
 import handleLegacyTranscribe from './handlers/legacy/transcribe.js';
 
@@ -95,6 +97,8 @@ const handlers = {
   'merge-transcripts': handleMergeTranscripts,
   'summarize': handleSummarize,
   'finalize-notion': handleFinalizeNotion,
+  'storage-usage': handleStorageUsage,
+  'cleanup-old-audio': handleCleanupOldAudio,
   'prepare': handleLegacyPrepare,
   'transcribe': handleLegacyTranscribe,
 };
