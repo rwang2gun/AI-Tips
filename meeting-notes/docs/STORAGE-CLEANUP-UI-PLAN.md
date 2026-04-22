@@ -8,8 +8,9 @@
 
 1. 사용자가 회의 끝난 직후 "서버에 얼마나 남았나"를 숫자로 본다.
 2. 사용자가 명시적 액션(버튼)으로 24h 이상된 오디오를 삭제한다 — 자동 만료 없음.
-3. flag 로직에 의존하지 않고 **모든 세션의 오디오/raw/meta**를 24h 창 안에서 보존. 모든 회의에 대해 사후 재전사 가능.
-4. Phase 1의 selective retention 분기를 단순화한다 (retentionIndices 구조 제거).
+3. flag 로직에 의존하지 않고 **모든 세션의 오디오 + meta.json**을 24h 창 안에서 보존. 재전사의 본질은 오디오이므로 모든 회의에 대해 사후 재전사 가능.
+4. `raw.txt`는 현행대로 flagged 세그먼트에만 저장. non-flagged의 raw는 유의어 치환 전후 차이만 있어 저장 가치 낮음 (2026-04-22 Codex 2차 리뷰 결정, 옵션 B).
+5. Phase 1의 selective retention 분기를 단순화한다 (retentionIndices 구조 제거).
 
 ## ❌ 비목표
 
@@ -58,11 +59,13 @@ finalize-notion:
 
 ## 🧩 API 계약
 
-### GET (X-Action: `storage-usage`)
+> HTTP 메서드는 **둘 다 POST**. `api/process-meeting.js`가 비-POST 요청을 405로 거부하고, 다른 X-Action과 일관성을 유지하기 위함. 의미상 `storage-usage`는 조회성이지만 기존 라우팅 패턴을 따름.
+
+### POST (X-Action: `storage-usage`)
 
 Vercel Blob 루트를 `meetings/` 전체 스캔 → 세션별 집계.
 
-**Request**: body 불필요. `x-app-token` 통과 필수 (기존 게이트).
+**Request**: body 불필요(빈 JSON `{}` 허용). `x-app-token` 통과 필수 (기존 게이트).
 
 **Response**:
 ```json
@@ -90,9 +93,9 @@ Vercel Blob 루트를 `meetings/` 전체 스캔 → 세션별 집계.
 
 ### POST (X-Action: `cleanup-old-audio`)
 
-24h 이상 지난 세션의 오디오/raw/meta를 삭제.
+24h 이상 지난 세션의 **오디오/raw/meta만** 삭제. 파생 결과물은 절대 건드리지 않음.
 
-**Request**: body 불필요. 내부적으로 storage-usage와 동일 기준 적용.
+**Request**: body 불필요(빈 JSON `{}` 허용). 내부적으로 storage-usage와 동일 기준 적용.
 
 **Response**:
 ```json
@@ -104,12 +107,14 @@ Vercel Blob 루트를 `meetings/` 전체 스캔 → 세션별 집계.
 }
 ```
 
-**삭제 대상 패턴**:
+**삭제 대상 패턴 (엄격 화이트리스트)**:
 - `meetings/<sid>/seg-*/chunk-*.bin` (오디오 청크)
 - `meetings/<sid>/transcript-*.raw.txt`
 - `meetings/<sid>/transcript-*.meta.json`
 
-기타 파일(`transcript.txt`, `transcript-NN.txt`, `result.json`)은 이미 finalize 시점에 삭제돼서 존재하지 않아야 함. 만약 예외적으로 남아 있으면 같이 삭제. **세션 폴더가 완전히 비면 Vercel Blob은 자동으로 빈 폴더 개념이 없으니 별도 처리 불필요**.
+**절대 삭제 금지 (failed-finalize 회복 경로 보존)**:
+- `meetings/<sid>/transcript.txt`, `meetings/<sid>/transcript-NN.txt`, `meetings/<sid>/result.json`
+- 이들은 정상 finalize 시 Notion 업로드 직후 삭제됨. **Blob에 남아 있다는 건 Notion 페이지 생성이 실패했다는 신호** — `handleFinalizeNotion`은 `result.json` 존재를 재시도 트리거로 삼음(없으면 400 반환). 24h 경과했다고 자동 삭제하면 회복 가능한 실패 세션을 영구 소실시킴. 이 범주의 정리는 cleanup UI가 아니라 사용자가 의식적으로 판단하는 **별도 수동 경로(scripts/list-blob-sessions.js로 확인 후 수동 del)**에 둠.
 
 ### 공통 제약
 
@@ -154,19 +159,22 @@ export function summarizeBlobs(blobs, { nowMs, cutoffMs }) {
 ### `api/handlers/finalize-notion.js` (단순화)
 
 - 현재의 `retentionIndices` 기반 selective cleanup 삭제.
-- 새 정책: **파생 파일만 삭제**.
+- 새 정책: **Notion 업로드에 이미 박제된 파생 파일만 삭제**.
   ```
-  삭제 대상 (하드코딩 패턴):
-    - meetings/<sid>/transcript.txt
-    - meetings/<sid>/transcript-*.txt (단, .raw.txt / .meta.json 제외)
-    - meetings/<sid>/result.json
-  보존:
+  정상 finalize 완료 시 삭제:
+    - meetings/<sid>/transcript.txt        (Notion에 transcript 첨부 완료)
+    - meetings/<sid>/transcript-NN.txt     (merge 이후 불필요)
+    - meetings/<sid>/result.json           (요약 → page-builder 결과 이미 Notion 페이지에 반영)
+  보존 (24h 이상 지나면 cleanup-old-audio UI로 삭제):
     - seg-*/chunk-*.bin
-    - transcript-*.raw.txt
+    - transcript-*.raw.txt (flagged 세그먼트만 존재)
     - transcript-*.meta.json
+  Notion 생성 실패 시 (throw):
+    - cleanup 전체 스킵. result.json이 남아 다음 finalize 재시도 트리거가 됨.
   ```
+- `raw.txt`의 생성 정책은 **변경 없음** — `transcribe-segment.js`에서 flagged 세그먼트에만 저장(2026-04-22 Codex 2차 리뷰 옵션 B). non-flagged 세그먼트는 유의어 치환 전후가 거의 동일해 저장 가치 낮음.
 - `buildManifest` 반환값에서 `retentionIndices` 의존 제거. `flaggedSegments`는 계속 사용 (경고 섹션용).
-- 호환: `buildManifest`가 `retentionIndices`를 계속 계산해 반환해도 무해(다른 호출자 없음). Phase 1 보강 관점에서 삭제하지 않고 남겨둬도 됨 — 나중에 배치 삭제 스크립트에서 재사용 가능.
+- 호환: `buildManifest`가 `retentionIndices`를 계속 계산해 반환해도 무해(다른 호출자 없음). 제거보다 "deprecated 주석" 수준으로 남기고 다음 정리 타이밍에 완전 제거.
 
 ### `meeting-notes/app.js` + `index.html` (UI)
 
@@ -198,7 +206,7 @@ export function summarizeBlobs(blobs, { nowMs, cutoffMs }) {
 
 3. **부분 삭제 실패**: 일부 파일 삭제가 실패해도 재호출로 이어받음(idempotent). 응답에 `deletedFiles`를 반환해 UI가 "부분적으로 실패한 경우에도 다시 눌러라" 힌트를 줄 수 있음 — 1단계에서는 "재시도" 같은 복잡 UI는 생략.
 
-4. **Notion 생성 실패 후 cleanup**: 현재 finalize가 페이지 생성 실패 시 에러를 내고 cleanup을 건너뛰는지 확인 필요. 현재 코드: `await createMeetingNotionPage(...)` 실패하면 throw → try 블록 밖이라 cleanup 미실행. 이 케이스에서 finalize 실패 세션이 Blob에 남지만, 24h 후 이 cleanup으로 정리 가능. **설계상 회복 경로임** (recover-session.js와 동일 철학).
+4. **Notion 생성 실패 후 cleanup** (Codex 리뷰 P1 반영): `finalize-notion`은 Notion 페이지 생성 실패 시 throw → cleanup 미실행 → `result.json`/`transcript.txt`/`transcript-NN.txt` 가 Blob에 남음. 이 상태는 의도적 회복 경로 — 클라가 finalize를 재시도하면 `handleFinalizeNotion`이 `result.json`을 읽어 Notion 생성만 다시 시도. **`result.json` 존재 자체가 "아직 Notion에 못 올렸으니 재시도해라" 신호**. 따라서 이 cleanup API는 해당 파일들을 **절대 건드리지 않음** (위 화이트리스트 참조). 24h 경과된 실패 세션이 쌓이면 사용자가 `scripts/list-blob-sessions.js`로 확인 후 수동으로 `scripts/recover-session.js` 돌리거나 직접 del. 자동 만료 대상 아님.
 
 5. **동시 cleanup 버튼 클릭**: 두 탭에서 동시에 누르면 첫 호출이 파일 삭제, 두 번째는 no-op. 응답 숫자가 달라져도 UI는 재조회로 자동 보정.
 
@@ -248,10 +256,13 @@ Phase 1의 selective retention 정책을 **대체**함. Phase 1에서 만든 sid
 
 Phase 2(Pro fallback 자동 발동)는 이 계획과 독립. Phase 1 데이터 축적 후 판단.
 
-## 🤔 열려 있는 질문 (Codex 리뷰 대상)
+## 🤔 열려 있는 질문
 
+- [x] HTTP 메서드 — **둘 다 POST로 결정** (라우터 POST-only 제약 + X-Action 일관성).
+- [x] raw.txt 전수 보존 여부 — **옵션 B 채택: flagged 한정 유지** (2026-04-22 Codex 2차 리뷰).
+- [x] failed-finalize 파생 파일 처리 — **cleanup에서 절대 건드리지 않음** (회복 경로 보존).
 - [ ] cleanup이 idempotent하게 작동하려면 Vercel Blob `del()`이 "없는 URL"에 관대한지 확인 필요.
-- [ ] finalize 실패 후 남은 Blob이 이 cleanup으로 충분히 정리되는지 — 특히 `result.json`이 남아 있는 세션(Notion 생성 직전 실패)의 의미를 어떻게 표시할지.
 - [ ] `storage-usage`가 1GB 넘는 대용량 blob 목록을 스캔할 때 60s 한도 걸릴 가능성. `listAllBlobs`의 페이지네이션 비용 평가 필요.
 - [ ] `oldestUploadedAtIso / newestUploadedAtIso` 대신 "session.createdAt" 같은 세션 시작 시각을 기준 삼는 게 더 직관적인지.
 - [ ] 버튼에 confirm dialog 필요한지 (삭제는 되돌릴 수 없음).
+- [ ] failed-finalize 세션이 Blob에 장기간 누적될 때 UI에서 별도 섹션으로 노출할지 (storage-usage 응답에서 `result.json`이 남아 있는 세션을 `stuck` 플래그로 표시하는 안).
