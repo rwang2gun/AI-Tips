@@ -58,3 +58,39 @@ test('selectSegmentTranscriptBlobs: transcript-NN.txt 형식만 골라 정렬', 
     ],
   );
 });
+
+test('selectSegmentTranscriptBlobs: 100+ 세그먼트 숫자 정렬 (localeCompare 회귀 방지)', () => {
+  const blobs = [
+    { pathname: 'meetings/x/transcript-100.txt' },
+    { pathname: 'meetings/x/transcript-02.txt' },
+    { pathname: 'meetings/x/transcript-13.txt' },
+    { pathname: 'meetings/x/transcript-99.txt' },
+  ];
+  const out = selectSegmentTranscriptBlobs(blobs);
+  assert.deepEqual(
+    out.map((b) => b.pathname),
+    [
+      'meetings/x/transcript-02.txt',
+      'meetings/x/transcript-13.txt',
+      'meetings/x/transcript-99.txt',
+      'meetings/x/transcript-100.txt',
+    ],
+  );
+});
+
+test('selectSegmentTranscriptBlobs: raw.txt / meta.json sidecar 제외', () => {
+  const blobs = [
+    { pathname: 'meetings/x/transcript-00.txt' },
+    { pathname: 'meetings/x/transcript-00.raw.txt' },
+    { pathname: 'meetings/x/transcript-00.meta.json' },
+    { pathname: 'meetings/x/transcript-01.txt' },
+  ];
+  const out = selectSegmentTranscriptBlobs(blobs);
+  assert.deepEqual(
+    out.map((b) => b.pathname),
+    [
+      'meetings/x/transcript-00.txt',
+      'meetings/x/transcript-01.txt',
+    ],
+  );
+});

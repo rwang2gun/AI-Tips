@@ -5,7 +5,12 @@ import { putPublic } from '../../lib/clients/blob.js';
 import { readJsonBody, jsonResponse } from '../../lib/http/body-parser.js';
 import { withRetry } from '../../lib/http/retry.js';
 import { fetchSynonyms, buildTranscribeSynonymHint } from '../../lib/synonyms.js';
-import { applySynonymReplacements } from '../../lib/transcript/post-process.js';
+import { applySynonymReplacements, detectLoop } from '../../lib/transcript/post-process.js';
+
+const TRANSCRIBE_MODEL = 'gemini-2.5-flash';
+// 5분 세그먼트가 이보다 짧게 전사되면 품질 저하(발화 없는 구간 or 조기 종료)로 간주하고 flag.
+// 정상 5분 회의는 최소 수천 byte 단위 (2026-04-22 세션 seg 13이 1,483 bytes로 비정상 케이스).
+const SHORT_TRANSCRIPT_THRESHOLD = 2000;
 
 // segment 단계 2: 한 세그먼트 전사 → transcript-NN.txt
 export default async function handleTranscribeSegment(req, res) {
@@ -32,7 +37,7 @@ export default async function handleTranscribeSegment(req, res) {
   const genAI = createGeminiClient();
   const result = await withRetry(() =>
     genAI.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: TRANSCRIBE_MODEL,
       contents: [
         createUserContent([
           promptText,
@@ -52,17 +57,58 @@ export default async function handleTranscribeSegment(req, res) {
     return jsonResponse(res, 500, { error: `Empty transcript for segment ${segmentIndex}` });
   }
 
+  // loop 탐지는 raw(치환 전)에 대해 수행. Flash가 직접 뱉은 반복이 유의어 치환 때문에 보이지 않게 되는 걸 방지.
+  const loopReport = detectLoop(rawTranscript);
+
   const { text: transcript, applied } = applySynonymReplacements(rawTranscript, synonyms);
   if (applied.length) {
     console.log(`[transcribe-segment ${segmentIndex}] synonym replacements:`, applied);
   }
 
-  const key = `meetings/${sessionId}/transcript-${String(segmentIndex).padStart(2, '0')}.txt`;
-  await putPublic(key, transcript, { contentType: 'text/plain; charset=utf-8' });
+  const flagged = loopReport.hasLoop || rawTranscript.length < SHORT_TRANSCRIPT_THRESHOLD;
+  if (flagged) {
+    console.warn(`[transcribe-segment ${segmentIndex}] FLAGGED — loop=${loopReport.hasLoop} rawLen=${rawTranscript.length}${loopReport.longestRun ? ` longestRun="${loopReport.longestRun.token}"×${loopReport.longestRun.count}` : ''}`);
+  }
+
+  const segKey = String(segmentIndex).padStart(2, '0');
+  const baseKey = `meetings/${sessionId}/transcript-${segKey}`;
+  await putPublic(`${baseKey}.txt`, transcript, { contentType: 'text/plain; charset=utf-8' });
+
+  // Sidecar 저장은 best-effort — 실패해도 transcript 업로드는 성공으로 처리.
+  // retention/진단을 위한 것이라 본 경로를 깨뜨리지 않아야 함.
+  const meta = {
+    segmentIndex,
+    model: TRANSCRIBE_MODEL,
+    finishReason: result?.candidates?.[0]?.finishReason ?? null,
+    usageMetadata: result?.usageMetadata ?? null,
+    rawLength: rawTranscript.length,
+    normalizedLength: transcript.length,
+    loopDetected: loopReport.hasLoop,
+    longestRun: loopReport.longestRun,
+    repeatedChars: loopReport.repeatedChars,
+    synonymAppliedCount: applied.reduce((n, a) => n + a.count, 0),
+    flagged,
+    timestamp: new Date().toISOString(),
+  };
+  try {
+    await putPublic(`${baseKey}.meta.json`, JSON.stringify(meta, null, 2), {
+      contentType: 'application/json; charset=utf-8',
+    });
+    // Raw는 flagged 세그먼트에서만 보존 — 정상 세그먼트에서는 normalized가 이미 충분한 증거.
+    if (flagged) {
+      await putPublic(`${baseKey}.raw.txt`, rawTranscript, {
+        contentType: 'text/plain; charset=utf-8',
+      });
+    }
+  } catch (e) {
+    console.warn(`[transcribe-segment ${segmentIndex}] sidecar upload failed:`, e?.message);
+  }
 
   return jsonResponse(res, 200, {
     ok: true,
     segmentIndex,
     transcriptLength: transcript.length,
+    flagged,
+    loopDetected: loopReport.hasLoop,
   });
 }

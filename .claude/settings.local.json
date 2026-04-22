@@ -37,7 +37,30 @@
       "Bash(git reset *)",
       "Bash(git mv *)",
       "Read(//d/Claude/AI-Tips/**)",
-      "Bash(powershell -Command \"\\(Get-Item meeting-notes-deck.html\\).LastWriteTime\")"
+      "Bash(powershell -Command \"\\(Get-Item meeting-notes-deck.html\\).LastWriteTime\")",
+      "Skill(codex:setup)",
+      "Skill(codex:setup:*)",
+      "Skill(codex:rescue)",
+      "Skill(codex:rescue:*)",
+      "Bash(git config *)",
+      "Bash(gh pr *)",
+      "Bash(npm test *)",
+      "Bash(UPDATE_SNAPSHOTS=1 npm test)",
+      "Bash(git switch *)",
+      "Bash(gh api *)",
+      "Bash(git merge *)",
+      "Bash(git branch *)",
+      "Bash(git checkout *)",
+      "Bash(grep -i \"전사\\\\|txt$\")",
+      "Bash(awk '/^--- \\\\[/{count++; print NR\": \"$0} END{print \"sections: \"count}' \"전사원문_2026-04-18_게임_기획_회의_멤버_소개_및_시작.txt\")",
+      "Bash(file tests/unit/notion/__snapshots__/*.snap.json)",
+      "PowerShell(Get-Command codex -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Command codex.exe -ErrorAction SilentlyContinue)",
+      "PowerShell(codex --help 2>&1)",
+      "PowerShell(codex review --help 2>&1)",
+      "PowerShell(codex exec --help 2>&1)",
+      "Bash(codex exec *)",
+      "Bash(grep -n \"transcript-\\\\\\\\\\\\\\\\d\\\\|seg-\" lib/audio/chunking.js scripts/recover-session.js)"
     ]
   }
 }

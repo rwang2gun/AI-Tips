@@ -22,7 +22,8 @@ function matchSnapshot(name, actual) {
     fs.writeFileSync(file, serialized + '\n', 'utf-8');
     return;
   }
-  const expected = fs.readFileSync(file, 'utf-8').replace(/\n$/, '');
+  // Windows git autocrlf로 스냅샷이 CRLF 저장될 수 있으니 비교 전 LF로 정규화.
+  const expected = fs.readFileSync(file, 'utf-8').replace(/\r\n/g, '\n').replace(/\n$/, '');
   assert.equal(serialized, expected, `snapshot mismatch — set UPDATE_SNAPSHOTS=1 if intended: ${file}`);
 }
 

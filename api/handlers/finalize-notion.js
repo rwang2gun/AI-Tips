@@ -1,5 +1,10 @@
 import { createNotionClient } from '../../lib/clients/notion.js';
-import { fetchBlobText, fetchBlobJson, deleteByPrefix } from '../../lib/clients/blob.js';
+import {
+  fetchBlobText,
+  fetchBlobJson,
+  listAllBlobs,
+  del,
+} from '../../lib/clients/blob.js';
 import {
   uploadFileToNotion,
   buildTranscriptFilename,
@@ -54,9 +59,10 @@ export default async function handleFinalizeNotion(req, res) {
   // cleanup 직전에 만들어 Blob 폴더의 "최종 상태"를 박제.
   // 실패해도 페이지 생성은 진행 (manifest가 없어도 요약/전사는 보존되므로).
   let manifestUpload = null;
+  let flaggedSegments = [];
   try {
     const resultJsonSize = JSON.stringify(resultJson).length;
-    const manifestText = await buildManifest({
+    const { text: manifestText, flaggedSegments: flagged } = await buildManifest({
       sessionId,
       title: meetingData.title,
       date,
@@ -68,6 +74,7 @@ export default async function handleFinalizeNotion(req, res) {
       transcriptMergedChars,
       resultJsonSize,
     });
+    flaggedSegments = flagged || [];
     const filename = buildManifestFilename(meetingData.title, date);
     const id = await uploadFileToNotion({
       body: manifestText,
@@ -91,9 +98,35 @@ export default async function handleFinalizeNotion(req, res) {
     manifestUpload,
   });
 
-  // 청크 + 전사 + 결과 파일 모두 정리 (전사/manifest는 이미 Notion에 첨부됐고, Gemini 파일은 48시간 후 자동 삭제)
+  // 청크 + 전사 + 결과 파일 정리. 단, flagged 세그먼트(loop/짧은 전사)는
+  // 사후 재전사/오프라인 분석을 위해 오디오 청크와 raw.txt/meta.json을 보존.
+  // - 보존 대상: meetings/<sid>/seg-NN/chunk-*.bin (flagged index만)
+  //             meetings/<sid>/transcript-NN.raw.txt (flagged index만)
+  //             meetings/<sid>/transcript-NN.meta.json (flagged index만)
+  // - 삭제 대상: 그 외 전체 (transcript.txt, transcript-NN.txt, result.json 포함 —
+  //             Notion에 이미 요약/전사/진행로그가 박제됨)
   try {
-    await deleteByPrefix(prefix);
+    const all = await listAllBlobs(prefix);
+    const flaggedSet = new Set(flaggedSegments.map((s) => s.index));
+    const toDelete = [];
+    for (const b of all) {
+      if (!flaggedSet.size) { toDelete.push(b.url); continue; }
+      const segMatch = b.pathname.match(/\/seg-(\d+)\/chunk-\d+\.bin$/);
+      const rawMatch = b.pathname.match(/\/transcript-(\d+)\.raw\.txt$/);
+      const metaMatch = b.pathname.match(/\/transcript-(\d+)\.meta\.json$/);
+      const retainedIdx = segMatch ? Number(segMatch[1])
+        : rawMatch ? Number(rawMatch[1])
+        : metaMatch ? Number(metaMatch[1])
+        : null;
+      if (retainedIdx != null && flaggedSet.has(retainedIdx)) continue;
+      toDelete.push(b.url);
+    }
+    if (toDelete.length) {
+      await del(toDelete);
+    }
+    if (flaggedSet.size) {
+      console.log(`[cleanup] retained flagged segments: ${[...flaggedSet].sort((a, b) => a - b).join(', ')}`);
+    }
   } catch (e) {
     console.warn('[cleanup] failed:', e?.message);
   }

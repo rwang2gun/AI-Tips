@@ -60,17 +60,17 @@ if (!blobs.length) {
   process.exit(1);
 }
 
-// seg-NN/chunk-NNNN.bin 구조로 그룹화
+// seg-NN/chunk-NNNN.bin 구조로 그룹화. 세그먼트/청크 인덱스 모두 100+ 지원.
 const segMap = new Map();
 const legacyChunks = [];
 for (const b of blobs) {
-  const segMatch = b.pathname.match(/\/seg-(\d{2})\/chunk-(\d{4})\.bin$/);
+  const segMatch = b.pathname.match(/\/seg-(\d+)\/chunk-(\d+)\.bin$/);
   if (segMatch) {
     const segIdx = parseInt(segMatch[1], 10);
     const chunkIdx = parseInt(segMatch[2], 10);
     if (!segMap.has(segIdx)) segMap.set(segIdx, []);
     segMap.get(segIdx).push({ chunkIdx, blob: b });
-  } else if (/\/chunk-\d{4}\.bin$/.test(b.pathname)) {
+  } else if (/\/chunk-\d+\.bin$/.test(b.pathname)) {
     legacyChunks.push(b);
   }
 }
