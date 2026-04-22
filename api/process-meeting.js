@@ -69,17 +69,17 @@
 
 import { jsonResponse } from '../lib/http/body-parser.js';
 import { logError } from '../lib/logging.js';
-import handleUploadChunk from './handlers/upload-chunk.js';
-import handleCheckFile from './handlers/check-file.js';
-import handlePrepareSegment from './handlers/prepare-segment.js';
-import handleTranscribeSegment from './handlers/transcribe-segment.js';
-import handleMergeTranscripts from './handlers/merge-transcripts.js';
-import handleSummarize from './handlers/summarize.js';
-import handleFinalizeNotion from './handlers/finalize-notion.js';
-import handleStorageUsage from './handlers/storage-usage.js';
-import handleCleanupOldAudio from './handlers/cleanup-old-audio.js';
-import handleLegacyPrepare from './handlers/legacy/prepare.js';
-import handleLegacyTranscribe from './handlers/legacy/transcribe.js';
+import handleUploadChunk from '../lib/handlers/upload-chunk.js';
+import handleCheckFile from '../lib/handlers/check-file.js';
+import handlePrepareSegment from '../lib/handlers/prepare-segment.js';
+import handleTranscribeSegment from '../lib/handlers/transcribe-segment.js';
+import handleMergeTranscripts from '../lib/handlers/merge-transcripts.js';
+import handleSummarize from '../lib/handlers/summarize.js';
+import handleFinalizeNotion from '../lib/handlers/finalize-notion.js';
+import handleStorageUsage from '../lib/handlers/storage-usage.js';
+import handleCleanupOldAudio from '../lib/handlers/cleanup-old-audio.js';
+import handleLegacyPrepare from '../lib/handlers/legacy/prepare.js';
+import handleLegacyTranscribe from '../lib/handlers/legacy/transcribe.js';
 
 export const config = {
   api: {
