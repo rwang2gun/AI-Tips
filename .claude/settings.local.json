@@ -61,7 +61,13 @@
       "PowerShell(codex exec --help 2>&1)",
       "Bash(codex exec *)",
       "Bash(grep -n \"transcript-\\\\\\\\\\\\\\\\d\\\\|seg-\" lib/audio/chunking.js scripts/recover-session.js)",
-      "Bash(codex review *)"
+      "Bash(codex review *)",
+      "Bash(gh auth *)",
+      "mcp__scheduled-tasks__list_scheduled_tasks",
+      "mcp__57da8da4-c4d1-4539-bfe9-4d4f0ef1dcd4__notion-fetch",
+      "mcp__57da8da4-c4d1-4539-bfe9-4d4f0ef1dcd4__notion-search",
+      "Bash(git status *)",
+      "Bash(git log *)"
     ]
   }
 }
