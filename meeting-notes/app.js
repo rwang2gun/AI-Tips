@@ -756,7 +756,7 @@ function segmentStatusText(p) {
     case 'polling': return 'AI 대기 중';
     case 'transcribing': return '전사 중';
     case 'done': return '완료';
-    case 'failed': return p.error?.message || '실패';
+    case 'failed': return p.error ? friendlyErrorMessage(p.error.message) : '실패';
     default: return p.status;
   }
 }
@@ -769,7 +769,7 @@ function phaseText(session, items) {
   if (session.phase === 'finalizing') return 'Notion에 저장 중...';
   if (session.phase === 'failed') {
     const msg = session.finalizationError?.message || '오류';
-    return `요약/저장 실패 — 아래 버튼으로 다시 시도 (${summarizeFinalizeError(msg)})`;
+    return `요약/저장 실패 — 아래 버튼으로 다시 시도 (${friendlyErrorMessage(msg)})`;
   }
   if (session.phase === 'awaiting') {
     const failed = items.filter((p) => p.status === 'failed').length;
@@ -780,9 +780,17 @@ function phaseText(session, items) {
   return '처리 중...';
 }
 
-// 서버 오류 메시지에서 사용자에게 보일 만한 핵심만 추출. JSON 덩어리는 숨김.
-function summarizeFinalizeError(raw) {
+// 서버/Gemini 오류 원문에서 사용자에게 보일 만한 핵심만 추출. JSON 덩어리는 숨김.
+// 크레딧 소진은 재시도로 해결되지 않으므로 결제 안내 문구로 치환한다.
+function friendlyErrorMessage(raw) {
   if (!raw) return '오류';
+  // 크레딧 소진 — 서버가 내려준 code/한글 메시지 또는 Gemini 원문 모두 커버.
+  if (/CREDITS_DEPLETED|prepayment|credits?[^.]*depleted|크레딧이 소진|manage your project and billing/i.test(raw)) {
+    return 'AI 사용 크레딧 소진 — Google AI Studio에서 결제·크레딧을 확인하세요';
+  }
+  // 서버가 정제한 한글 메시지({"error":"..."}) 우선, 없으면 Gemini 원문 message.
+  const serverMatch = raw.match(/"error":"([^"]+)"/);
+  if (serverMatch) return serverMatch[1].slice(0, 120);
   const geminiMatch = raw.match(/"message":"([^"]+)"/);
   if (geminiMatch) return geminiMatch[1].slice(0, 120);
   const firstLine = raw.split('\n')[0];

@@ -196,9 +196,9 @@ Notion 페이지 하단 `🔍 검토 자료` 토글 안에:
 
 | 단계 | 모델 | 트리거 | 60분 회의 기준 비용 |
 |------|------|--------|---------------------|
-| transcribe-segment | gemini-2.5-flash (thinking OFF) | 항상 (×12) | ~20원 |
-| summarize | gemini-2.5-flash | 항상 ×1 | ~15원 |
-| refine-topic | gemini-2.5-pro | topic > 50자 | ~30원 (조건부) |
+| transcribe-segment | gemini-3.5-flash (thinking OFF) | 항상 (×12) | ~20원 |
+| summarize | gemini-3.1-pro | 항상 ×1 | ~15원 |
+| refine-topic | gemini-3.1-pro | topic > 50자 | ~30원 (조건부) |
 
 > 로컬 스크립트(`process-recording-locally.js`)는 summarize도 Pro 기본. 서버는 Flash + 503 재시도(60초 한도 안에 끝나야 함).
 

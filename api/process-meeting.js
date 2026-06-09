@@ -68,6 +68,7 @@
 // ============================================================
 
 import { jsonResponse } from '../lib/http/body-parser.js';
+import { isBillingDepleted } from '../lib/http/gemini-error.js';
 import { logError } from '../lib/logging.js';
 import handleUploadChunk from '../lib/handlers/upload-chunk.js';
 import handleCheckFile from '../lib/handlers/check-file.js';
@@ -140,6 +141,16 @@ export default async function handler(req, res) {
       method: req.method,
       url: req.url,
     });
+    // 크레딧 소진은 재시도해도 영구 실패 — 클라이언트가 5xx로 오인해 재시도하지
+    // 않도록 402(Payment Required)로 내려보내고, Gemini 원본 JSON 대신 한글
+    // 결제 안내를 보여준다. code 필드로 클라이언트가 케이스를 식별.
+    if (isBillingDepleted(err)) {
+      return jsonResponse(res, 402, {
+        error: 'AI 사용 크레딧이 소진되었습니다. Google AI Studio(ai.studio)에서 프로젝트의 결제·크레딧을 확인해주세요.',
+        code: 'CREDITS_DEPLETED',
+        logKey: logKey || undefined,
+      });
+    }
     return jsonResponse(res, 500, {
       error: err?.message || 'Internal server error',
       stack: process.env.NODE_ENV === 'development' ? err?.stack : undefined,
