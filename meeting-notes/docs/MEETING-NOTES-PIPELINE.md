@@ -23,7 +23,7 @@ meeting-notes/                api/process-meeting.js           Gemini API
 - **AI**: Gemini Files API + 2.5 Flash(전사/요약) + 2.5 Pro(topic 재압축)
 - **출력**: Notion "자동 회의록 DB" 페이지 + 전사 원문 첨부
 
-> **백엔드 선택**: `GEMINI_BACKEND=vertex`로 Vertex AI 전환 가능(구독 Cloud 크레딧 사용). Vertex는 Files API 미지원이라 오디오를 인라인(base64)으로 보내고 prepare/check-file 폴링을 건너뛴다. 설정은 `VERTEX-MIGRATION.md` 참고. 기본값 `aistudio`는 아래 흐름 그대로.
+> **백엔드 선택** (`GEMINI_BACKEND`): `aistudio`(기본·선불) / `vertex`(Cloud 후불) / `auto`(선불 먼저 쓰다 소진 시 Vertex로 자동 폴백). Vertex는 Files API 미지원이라 오디오를 인라인(base64)으로 보내고 prepare/check-file 폴링을 건너뛴다. `auto`는 prepare/transcribe/summarize에서 `isBillingDepleted` 감지 시 해당 요청만 Vertex로 재시도(클라이언트 변경 없음). 모델은 양쪽 공통 `gemini-2.5-flash`/`gemini-2.5-pro`. 설정은 `VERTEX-MIGRATION.md` 참고.
 
 ---
 
@@ -198,9 +198,9 @@ Notion 페이지 하단 `🔍 검토 자료` 토글 안에:
 
 | 단계 | 모델 | 트리거 | 60분 회의 기준 비용 |
 |------|------|--------|---------------------|
-| transcribe-segment | gemini-3.5-flash (thinking OFF) | 항상 (×12) | ~20원 |
-| summarize | gemini-3.1-pro-preview | 항상 ×1 | ~15원 |
-| refine-topic | gemini-3.1-pro-preview | topic > 50자 | ~30원 (조건부) |
+| transcribe-segment | gemini-2.5-flash (thinking OFF) | 항상 (×12) | ~20원 |
+| summarize | gemini-2.5-pro | 항상 ×1 | ~15원 |
+| refine-topic | gemini-2.5-pro | topic > 50자 | ~30원 (조건부) |
 
 > 로컬 스크립트(`process-recording-locally.js`)는 summarize도 Pro 기본. 서버는 Flash + 503 재시도(60초 한도 안에 끝나야 함).
 

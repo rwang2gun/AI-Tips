@@ -15,6 +15,9 @@
 |--------|------|------------|--------------------|
 | `aistudio` (기본) | `GEMINI_API_KEY` | Files API(`files.upload` → `fileUri`) | 사용 |
 | `vertex` | GCP 프로젝트 + 서비스 계정 | **인라인(base64)** — Files API 미지원 | prepare는 즉시 ACTIVE 반환, 폴링 생략 |
+| `auto` | 둘 다 | 평소 aistudio, 폴백 시 vertex | 폴백 시 prepare가 ACTIVE 반환 |
+
+> **`auto` 모드 (권장 — 선불 소진 무중단)**: AI Studio 선불 크레딧을 먼저 쓰다가, `prepayment depleted`(`isBillingDepleted`)가 감지되면 **그 요청만 Vertex로 자동 폴백**한다. prepare-segment·transcribe-segment·summarize 각 호출이 독립적으로 폴백하므로, 선불이 회의 도중 떨어져도 앱이 멈추지 않고 이어서 Vertex로 처리된다. 클라이언트(app.js) 변경은 없다(prepare가 ACTIVE 마커를 반환 → 기존 폴링 단락 → transcribe가 fileUri 없음을 보고 인라인). 모델은 AI Studio·Vertex 양쪽에서 환각 없이 동작하는 **`gemini-2.5-flash`/`gemini-2.5-pro`** 로 통일(`gemini-3.5-flash`는 AI Studio에서 오디오 환각 관측).
 
 > **핵심 제약**: Vertex AI는 Gemini **Files API를 지원하지 않는다.** 그래서 vertex 모드에서는 5분 세그먼트 오디오를 요청에 **인라인 base64**로 실어 보낸다(인라인 한도 100MB, 5분 세그먼트 ~2~5MB라 안전). 클라이언트(`app.js`)는 수정 불필요 — `prepare-segment`가 `state:'ACTIVE'`를 반환하면 기존 폴링 로직이 자동으로 건너뛴다.
 
