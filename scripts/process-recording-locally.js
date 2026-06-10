@@ -14,16 +14,15 @@
 //        NOTION_GLOSSARY_DB_ID=...     (없으면 용어집 없이 요약)
 //
 //   2) 실행:
-//        node --env-file=.env scripts/process-recording-locally.js <audio-file> [--title "..."] [--type "킥오프|내부 논의|실무 논의|기타"] [--summarize-model=gemini-3.1-pro-preview] [--transcribe-only]
+//        node --env-file=.env scripts/process-recording-locally.js <audio-file> [--title "..."] [--type "킥오프|내부 논의|실무 논의|기타"] [--summarize-model=gemini-2.5-pro] [--transcribe-only]
 //
 //      --transcribe-only: 전사만 하고 요약 단계 스킵 (세그먼트별 순차 전사용)
 //
-//   [모델 전략]  (2026-06 Gemini 2.x 정리로 3.x 이관)
-//     - 전사 (Step 1): gemini-3.5-flash (저렴 + 단순 작업에 충분)
-//     - 요약 (Step 2): gemini-3.1-pro-preview (긴 입력 + structured output에서
-//       Flash는 503 UNAVAILABLE 지속 반환하므로 Pro 기본값. 3.1-pro 정식판은
-//       미출시 — preview만 존재. 'gemini-3.1-pro' 접미사 없는 이름은 404)
-//     - --summarize-model=gemini-3.5-flash 로 요약도 Flash 강제 가능
+//   [모델 전략]  (gemini-2.5 — AI Studio·Vertex 양쪽 제공 + 검증된 품질)
+//     - 전사 (Step 1): gemini-2.5-flash (저렴 + 단순 작업에 충분)
+//     - 요약 (Step 2): gemini-2.5-pro (긴 입력 + structured output에서
+//       Flash는 503 UNAVAILABLE 지속 반환하므로 Pro 기본값)
+//     - --summarize-model=gemini-2.5-flash 로 요약도 Flash 강제 가능
 //
 //      또는:
 //        export GEMINI_API_KEY=... NOTION_TOKEN=... NOTION_GLOSSARY_DB_ID=...
@@ -64,7 +63,7 @@ import {
   buildSummarizeSynonymHint,
 } from '../lib/synonyms.js';
 import { fetchGuide } from '../lib/guide.js';
-import { createGeminiClient } from '../lib/clients/gemini.js';
+import { createGeminiClient, isVertexBackend } from '../lib/clients/gemini.js';
 import {
   enforceSentenceBreaks,
   applySynonymReplacements,
@@ -157,28 +156,45 @@ if (existsSync(transcriptPath) && !flags.has('--force-retranscribe')) {
   console.log(`\n[1/3] Skip transcribe — ${transcriptPath} already exists (${transcript.length} chars).`);
   console.log(`      Re-run with --force-retranscribe to redo.`);
 } else {
-  console.log('\n[1/3] Uploading audio to Gemini Files API...');
   const fileBuffer = await fs.readFile(audioPath);
-  const audioBlob = new Blob([fileBuffer], { type: mimeType });
 
-  const uploaded = await genAI.files.upload({
-    file: audioBlob,
-    config: { mimeType },
-  });
-  console.log(`      Uploaded as ${uploaded.name}, state: ${uploaded.state}`);
+  // 오디오 파트: aistudio는 Files API 업로드 후 URI 참조, vertex는 인라인(base64) 전송.
+  // Vertex는 Files API 미지원. 인라인 한도 100MB(base64) — 매우 긴 녹음(수 시간)이면
+  // 초과할 수 있어 경고만 출력(세그먼트 단위 웹앱 경로는 5분이라 무관).
+  let audioPart;
+  if (isVertexBackend()) {
+    const base64 = fileBuffer.toString('base64');
+    const mb = (base64.length / 1024 / 1024).toFixed(1);
+    console.log(`\n[1/3] Vertex backend — sending audio inline (${mb} MB base64, no Files API)...`);
+    if (base64.length > 90 * 1024 * 1024) {
+      console.warn(`      ⚠️ 인라인 base64가 ${mb} MB로 100MB 한도에 근접 — 더 짧게 분할하거나 aistudio 백엔드를 쓰세요.`);
+    }
+    audioPart = {
+      inlineData: { mimeType: mimeType.split(';')[0].trim() || 'audio/webm', data: base64 },
+    };
+  } else {
+    console.log('\n[1/3] Uploading audio to Gemini Files API...');
+    const audioBlob = new Blob([fileBuffer], { type: mimeType });
+    const uploaded = await genAI.files.upload({
+      file: audioBlob,
+      config: { mimeType },
+    });
+    console.log(`      Uploaded as ${uploaded.name}, state: ${uploaded.state}`);
 
-  // ACTIVE 대기
-  let fileInfo = uploaded;
-  while (fileInfo.state === 'PROCESSING') {
-    process.stdout.write('      Waiting for ACTIVE...\r');
-    await new Promise((r) => setTimeout(r, 2000));
-    fileInfo = await genAI.files.get({ name: uploaded.name });
-  }
-  console.log(`      File state: ${fileInfo.state}                         `);
+    // ACTIVE 대기
+    let fileInfo = uploaded;
+    while (fileInfo.state === 'PROCESSING') {
+      process.stdout.write('      Waiting for ACTIVE...\r');
+      await new Promise((r) => setTimeout(r, 2000));
+      fileInfo = await genAI.files.get({ name: uploaded.name });
+    }
+    console.log(`      File state: ${fileInfo.state}                         `);
 
-  if (fileInfo.state !== 'ACTIVE') {
-    console.error(`ERROR: Gemini file failed to become ACTIVE (state: ${fileInfo.state})`);
-    process.exit(1);
+    if (fileInfo.state !== 'ACTIVE') {
+      console.error(`ERROR: Gemini file failed to become ACTIVE (state: ${fileInfo.state})`);
+      process.exit(1);
+    }
+    audioPart = createPartFromUri(fileInfo.uri, fileInfo.mimeType);
   }
 
   console.log('      Generating transcript (this can take several minutes for long audio)...');
@@ -187,11 +203,11 @@ if (existsSync(transcriptPath) && !flags.has('--force-retranscribe')) {
 
   const transcribeStart = Date.now();
   const transcribeResult = await withRetry(() => genAI.models.generateContent({
-    model: 'gemini-3.5-flash',
+    model: 'gemini-2.5-flash',
     contents: [
       createUserContent([
         transcribePrompt,
-        createPartFromUri(fileInfo.uri, fileInfo.mimeType),
+        audioPart,
       ]),
     ],
     config: {
@@ -284,14 +300,13 @@ if (existsSync(resultPath) && !flags.has('--force-resummarize')) {
     synonymHint: summarizeSynonymHint,
   });
 
-  // 요약은 gemini-3.1-pro-preview 기본. Flash는 "긴 입력(100K+ chars) + structured
+  // 요약은 gemini-2.5-pro 기본. Flash는 "긴 입력(100K+ chars) + structured
   // output" 조합에서 지속적 503 UNAVAILABLE 반환 (6회 지수백오프 재시도로도
   // 해결 안 됨). Pro는 별도 용량 풀이라 안정적 + 한국어 구조화 품질 우수.
   // 비용: Flash 대비 약 22배지만 절대금액 건당 100~150원 수준.
   // 전사는 Flash 유지 — 단순 작업이라 Flash로 충분.
-  // --summarize-model 플래그로 오버라이드 가능 (예: 'gemini-3.5-flash').
-  // 주의: 'gemini-3.1-pro'(접미사 없음)는 존재하지 않는 모델 → 404. 반드시 '-preview' 부착.
-  const summarizeModel = kwargs['summarize-model'] || 'gemini-3.1-pro-preview';
+  // --summarize-model 플래그로 오버라이드 가능 (예: 'gemini-2.5-flash').
+  const summarizeModel = kwargs['summarize-model'] || 'gemini-2.5-pro';
   console.log(`      Model: ${summarizeModel}`);
   const summarizeStart = Date.now();
   const summarizeResult = await withRetry(() => genAI.models.generateContent({
@@ -361,7 +376,7 @@ async function refineTopic(meetingData) {
   const prompt = buildRefineTopicPrompt({ meetingData });
 
   const result = await genAI.models.generateContent({
-    model: 'gemini-3.1-pro-preview',
+    model: 'gemini-2.5-pro',
     contents: [createUserContent([prompt])],
     config: { maxOutputTokens: 256 },
   });
