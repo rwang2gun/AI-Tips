@@ -23,6 +23,8 @@ meeting-notes/                api/process-meeting.js           Gemini API
 - **AI**: Gemini Files API + 2.5 Flash(전사/요약) + 2.5 Pro(topic 재압축)
 - **출력**: Notion "자동 회의록 DB" 페이지 + 전사 원문 첨부
 
+> **백엔드 선택**: `GEMINI_BACKEND=vertex`로 Vertex AI 전환 가능(구독 Cloud 크레딧 사용). Vertex는 Files API 미지원이라 오디오를 인라인(base64)으로 보내고 prepare/check-file 폴링을 건너뛴다. 설정은 `VERTEX-MIGRATION.md` 참고. 기본값 `aistudio`는 아래 흐름 그대로.
+
 ---
 
 ## 파이프라인 단계

@@ -64,7 +64,7 @@ import {
   buildSummarizeSynonymHint,
 } from '../lib/synonyms.js';
 import { fetchGuide } from '../lib/guide.js';
-import { createGeminiClient } from '../lib/clients/gemini.js';
+import { createGeminiClient, isVertexBackend } from '../lib/clients/gemini.js';
 import {
   enforceSentenceBreaks,
   applySynonymReplacements,
@@ -157,28 +157,45 @@ if (existsSync(transcriptPath) && !flags.has('--force-retranscribe')) {
   console.log(`\n[1/3] Skip transcribe — ${transcriptPath} already exists (${transcript.length} chars).`);
   console.log(`      Re-run with --force-retranscribe to redo.`);
 } else {
-  console.log('\n[1/3] Uploading audio to Gemini Files API...');
   const fileBuffer = await fs.readFile(audioPath);
-  const audioBlob = new Blob([fileBuffer], { type: mimeType });
 
-  const uploaded = await genAI.files.upload({
-    file: audioBlob,
-    config: { mimeType },
-  });
-  console.log(`      Uploaded as ${uploaded.name}, state: ${uploaded.state}`);
+  // 오디오 파트: aistudio는 Files API 업로드 후 URI 참조, vertex는 인라인(base64) 전송.
+  // Vertex는 Files API 미지원. 인라인 한도 100MB(base64) — 매우 긴 녹음(수 시간)이면
+  // 초과할 수 있어 경고만 출력(세그먼트 단위 웹앱 경로는 5분이라 무관).
+  let audioPart;
+  if (isVertexBackend()) {
+    const base64 = fileBuffer.toString('base64');
+    const mb = (base64.length / 1024 / 1024).toFixed(1);
+    console.log(`\n[1/3] Vertex backend — sending audio inline (${mb} MB base64, no Files API)...`);
+    if (base64.length > 90 * 1024 * 1024) {
+      console.warn(`      ⚠️ 인라인 base64가 ${mb} MB로 100MB 한도에 근접 — 더 짧게 분할하거나 aistudio 백엔드를 쓰세요.`);
+    }
+    audioPart = {
+      inlineData: { mimeType: mimeType.split(';')[0].trim() || 'audio/webm', data: base64 },
+    };
+  } else {
+    console.log('\n[1/3] Uploading audio to Gemini Files API...');
+    const audioBlob = new Blob([fileBuffer], { type: mimeType });
+    const uploaded = await genAI.files.upload({
+      file: audioBlob,
+      config: { mimeType },
+    });
+    console.log(`      Uploaded as ${uploaded.name}, state: ${uploaded.state}`);
 
-  // ACTIVE 대기
-  let fileInfo = uploaded;
-  while (fileInfo.state === 'PROCESSING') {
-    process.stdout.write('      Waiting for ACTIVE...\r');
-    await new Promise((r) => setTimeout(r, 2000));
-    fileInfo = await genAI.files.get({ name: uploaded.name });
-  }
-  console.log(`      File state: ${fileInfo.state}                         `);
+    // ACTIVE 대기
+    let fileInfo = uploaded;
+    while (fileInfo.state === 'PROCESSING') {
+      process.stdout.write('      Waiting for ACTIVE...\r');
+      await new Promise((r) => setTimeout(r, 2000));
+      fileInfo = await genAI.files.get({ name: uploaded.name });
+    }
+    console.log(`      File state: ${fileInfo.state}                         `);
 
-  if (fileInfo.state !== 'ACTIVE') {
-    console.error(`ERROR: Gemini file failed to become ACTIVE (state: ${fileInfo.state})`);
-    process.exit(1);
+    if (fileInfo.state !== 'ACTIVE') {
+      console.error(`ERROR: Gemini file failed to become ACTIVE (state: ${fileInfo.state})`);
+      process.exit(1);
+    }
+    audioPart = createPartFromUri(fileInfo.uri, fileInfo.mimeType);
   }
 
   console.log('      Generating transcript (this can take several minutes for long audio)...');
@@ -191,7 +208,7 @@ if (existsSync(transcriptPath) && !flags.has('--force-retranscribe')) {
     contents: [
       createUserContent([
         transcribePrompt,
-        createPartFromUri(fileInfo.uri, fileInfo.mimeType),
+        audioPart,
       ]),
     ],
     config: {
