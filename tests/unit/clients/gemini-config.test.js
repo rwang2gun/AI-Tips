@@ -29,10 +29,10 @@ test('resolveVertexConfig: project 없으면 throw', () => {
   assert.throws(() => resolveVertexConfig({}), /GOOGLE_CLOUD_PROJECT is not set/);
 });
 
-test('resolveVertexConfig: location 기본값 us-central1', () => {
+test('resolveVertexConfig: location 기본값 global (최신 모델은 global 전용 서빙)', () => {
   const cfg = resolveVertexConfig({ GOOGLE_CLOUD_PROJECT: 'my-proj' });
   assert.equal(cfg.project, 'my-proj');
-  assert.equal(cfg.location, 'us-central1');
+  assert.equal(cfg.location, 'global');
   assert.equal(cfg.credentials, undefined);
 });
 

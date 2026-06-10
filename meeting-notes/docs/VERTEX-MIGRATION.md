@@ -38,8 +38,10 @@
 |------|-----|
 | `GEMINI_BACKEND` | `vertex` |
 | `GOOGLE_CLOUD_PROJECT` | GCP 프로젝트 ID |
-| `GOOGLE_CLOUD_LOCATION` | 리전 (예: `us-central1`) |
+| `GOOGLE_CLOUD_LOCATION` | **`global` 권장** (미설정 시 기본값도 global) |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | 위 JSON 키 **파일 내용 전체**를 한 줄로 붙여넣기 |
+
+> **리전 주의**: 최신 Gemini 모델(2.5+/3.x)은 `us-central1` 같은 개별 리전이 아니라 **global 엔드포인트로만 서빙**되는 경우가 많다. 개별 리전으로 호출하면 GA 모델인데도 `404 Publisher Model ... was not found`가 난다 (2026-06-10 `gemini-3.5-flash` + us-central1 실측).
 
 > 로컬 개발은 `GOOGLE_SERVICE_ACCOUNT_JSON` 대신 `GOOGLE_APPLICATION_CREDENTIALS`(키 파일 경로)로 ADC를 써도 된다.
 
@@ -49,7 +51,7 @@
 
 ## ⚠️ 확인이 필요한 부분
 
-1. **모델 ID / 리전 가용성** — `gemini-3.5-flash`, `gemini-3.1-pro-preview`가 **Vertex AI에서도 동일 ID로, 선택한 리전에 제공**되는지 확인. AI Studio와 Vertex는 모델 이름·가용 리전이 다를 수 있다. 404가 나면 `Model Garden`에서 정확한 ID/리전을 확인해 상수를 맞춘다.
+1. **모델 ID / 리전 가용성** — 404 `Publisher Model ... was not found`가 나면 먼저 **location이 `global`인지** 확인(개별 리전이 가장 흔한 원인). 그래도 나면 모델 ID를 [Google models 표](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/google-models)와 대조. 2026-06 기준 `gemini-2.5-pro/flash`(GA), `gemini-3.5-flash`(GA), `gemini-3.1-pro`(프리뷰) 모두 Vertex 제공.
 2. **크레딧 한도** — Pro는 월 $10. 회의 1건당 수십~수백 원이라 가벼운 사용이면 충분하지만, 많이 돌리면 소진된다(소진 시 카드로 넘어가거나 실패).
 3. **긴 단일 녹음(로컬 스크립트)** — 인라인 100MB 한도. 수 시간짜리 단일 webm은 초과할 수 있다(스크립트가 90MB 초과 시 경고). 웹앱 세그먼트(5분) 경로는 무관.
 
