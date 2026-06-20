@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>아이 식단과 체중 기록</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">매일 한 번, 가볍게</p>
+          <h1>아이 식단과 체중 기록</h1>
+        </div>
+        <div class="date-jump">
+          <label for="recordDate">날짜</label>
+          <input id="recordDate" type="date" />
+        </div>
+      </header>
+
+      <section class="workspace" aria-label="식단과 체중 기록">
+        <form class="entry-panel" id="entryForm">
+          <div class="section-heading">
+            <h2 id="formTitle">오늘 기록</h2>
+            <button class="soft-button" type="button" id="todayButton">오늘</button>
+          </div>
+
+          <div class="meal-grid">
+            <label>
+              <span>아침</span>
+              <textarea id="breakfast" rows="4" placeholder="예: 밥, 계란찜, 사과"></textarea>
+            </label>
+            <label>
+              <span>점심</span>
+              <textarea id="lunch" rows="4" placeholder="예: 소고기 미역국, 두부"></textarea>
+            </label>
+            <label>
+              <span>저녁</span>
+              <textarea id="dinner" rows="4" placeholder="예: 닭가슴살, 고구마, 채소"></textarea>
+            </label>
+            <label>
+              <span>간식</span>
+              <textarea id="snack" rows="4" placeholder="예: 요거트, 바나나"></textarea>
+            </label>
+          </div>
+
+          <div class="details-grid expanded">
+            <label>
+              <span>현재 체중</span>
+              <div class="weight-input">
+                <input id="weight" type="number" min="0" max="250" step="0.1" placeholder="0.0" />
+                <span>kg</span>
+              </div>
+            </label>
+            <label>
+              <span>목표 체중</span>
+              <div class="weight-input">
+                <input id="targetWeight" type="number" min="0" max="250" step="0.1" placeholder="0.0" />
+                <span>kg</span>
+              </div>
+            </label>
+            <label>
+              <span>운동 시간</span>
+              <div class="weight-input">
+                <input id="exerciseMinutes" type="number" min="0" max="600" step="1" placeholder="0" />
+                <span>분</span>
+              </div>
+            </label>
+          </div>
+
+          <label class="wide-field one-line-field">
+            <span>운동 내용</span>
+            <input id="exercise" type="text" placeholder="예: 줄넘기 10분, 산책 30분" />
+          </label>
+
+          <div class="reflection-grid">
+            <label>
+              <span>잘한 점</span>
+              <textarea id="goodPoint" rows="3" placeholder="오늘 잘 지킨 점을 적어주세요."></textarea>
+            </label>
+            <label>
+              <span>반성할 점</span>
+              <textarea id="reflection" rows="3" placeholder="내일 조금 더 챙기고 싶은 점을 적어주세요."></textarea>
+            </label>
+          </div>
+
+          <label class="wide-field">
+            <span>내일 챙길 일정</span>
+            <textarea id="tomorrowPlan" rows="3" placeholder="예: 병원 예약, 준비물, 약 챙기기, 학교 제출물"></textarea>
+          </label>
+
+          <div class="actions">
+            <button class="primary-button" type="submit">저장</button>
+            <button class="danger-button" type="button" id="deleteButton">삭제</button>
+          </div>
+          <p class="save-state" id="saveState" role="status" aria-live="polite"></p>
+        </form>
+
+        <aside class="side-stack" aria-label="체중 요약과 레시피 작성">
+          <section class="insight-panel" aria-label="최근 체중 변화">
+            <div class="section-heading">
+              <h2>최근 체중 변화</h2>
+              <span id="recordCount">0일</span>
+            </div>
+            <div class="chart-wrap">
+              <canvas id="weightChart" width="720" height="320" aria-label="최근 체중 선 그래프"></canvas>
+              <p class="empty-chart" id="emptyChart">체중을 저장하면 선 그래프가 표시됩니다.</p>
+            </div>
+            <div class="summary-strip expanded-summary">
+              <div>
+                <span>최근</span>
+                <strong id="latestWeight">-</strong>
+              </div>
+              <div>
+                <span>변화</span>
+                <strong id="weightDelta">-</strong>
+              </div>
+              <div>
+                <span>목표</span>
+                <strong id="targetSummary">-</strong>
+              </div>
+              <div>
+                <span>남은 체중</span>
+                <strong id="remainingWeight">-</strong>
+              </div>
+            </div>
+          </section>
+
+          <section class="note-panel recipe-panel" aria-label="레시피 노트 작성">
+            <div class="section-heading">
+              <h2>레시피 노트</h2>
+              <button class="soft-button compact-button" type="button" id="newRecipeButton">새 레시피</button>
+            </div>
+
+            <label>
+              <span>레시피 제목</span>
+              <input id="recipeTitle" type="text" placeholder="예: 닭가슴살 채소볶음" />
+            </label>
+            <label class="wide-field">
+              <span>영상/인터넷 링크</span>
+              <input id="recipeLink" type="url" placeholder="예: https://..." />
+            </label>
+            <label class="wide-field">
+              <span>재료</span>
+              <textarea id="recipeIngredients" rows="3" placeholder="예: 닭가슴살, 파프리카, 양배추"></textarea>
+            </label>
+            <label class="wide-field">
+              <span>내용</span>
+              <textarea
+                id="recipeContent"
+                rows="5"
+                placeholder="조리법, 아이 반응, 다음에 바꿔볼 점을 적어두세요."
+              ></textarea>
+            </label>
+            <div class="recipe-actions">
+              <button class="primary-button compact-action" type="button" id="saveRecipeButton">저장</button>
+              <button class="danger-button compact-action" type="button" id="deleteRecipeButton">삭제</button>
+            </div>
+            <p class="save-state compact-state" id="recipeState" role="status" aria-live="polite"></p>
+          </section>
+        </aside>
+      </section>
+
+      <section class="history-section" aria-label="이전 레시피">
+        <div class="section-heading">
+          <h2>이전 레시피</h2>
+          <span>레시피 제목을 선택하면 작성란에 다시 불러와요.</span>
+        </div>
+        <div class="recipe-list horizontal-list" id="recipeList"></div>
+      </section>
+
+      <section class="history-section" aria-label="날짜별 기록">
+        <div class="section-heading">
+          <h2>날짜별 기록</h2>
+          <span id="historyHint">저장된 날짜를 선택해 다시 볼 수 있어요.</span>
+        </div>
+        <div class="history-list" id="historyList"></div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
